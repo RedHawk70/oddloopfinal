@@ -1,0 +1,222 @@
+#!/bin/bash
+
+GitUser="RedHawk70"
+# wget https://github.com/${GitUser}/
+
+# IP SERVER (kalau perlu)
+MYIP=$(curl -sS ipv4.icanhazip.com)
+
+# Warna
+RED='\033[0;31m'
+NC='\033[0m'
+
+LOG=/root/log-install.txt
+CONFIG_TLS=/usr/local/etc/xray/config.json
+CONFIG_NONE=/usr/local/etc/xray/none.json
+
+# ==========================
+# FUNC: KILL PROSES GUNA PORT
+# ==========================
+kill_port_if_used() {
+    local port="$1"
+    local net_lines pidprog pid prog unit ans
+
+    # Ambil semua listener yang guna port (tcp/udp)
+    net_lines=$(netstat -nutlp 2>/dev/null | awk -v p=":$port" '$4 ~ p"$" {print}')
+
+    if [[ -n "$net_lines" ]]; then
+        echo -e "${RED}[WARNING]${NC} port in used : $port"
+        echo -e "\e[1;33m[INFO]\e[0m Service/Process yang guna port $port:"
+
+        # Papar info detail (PID/Program + service unit kalau ada)
+        while IFS= read -r line; do
+            pidprog=$(echo "$line" | awk '{print $7}')
+            pid="${pidprog%%/*}"
+            prog="${pidprog#*/}"
+
+            # Kalau netstat tak dapat PID/Program
+            if [[ -z "$pidprog" || "$pidprog" == "-" ]]; then
+                echo -e "  - $line"
+                echo -e "    PID: - | Program: - | Service: -"
+                continue
+            fi
+
+            unit="-"
+            if [[ -n "$pid" && "$pid" != "-" ]]; then
+                unit=$(systemctl status "$pid" --no-pager --plain 2>/dev/null | head -n1 | sed 's/^●[[:space:]]*//')
+                [[ -z "$unit" ]] && unit="-"
+            fi
+
+            echo -e "  - $line"
+            echo -e "    PID: $pid | Program: $prog | Service: $unit"
+        done <<< "$net_lines"
+
+        echo ""
+        echo -e "Pilihan:"
+        echo -e "  [1] Kill port tersebut dan teruskan tukar port"
+        echo -e "  [2] Cancel"
+        read -p "Pilih [1-2]: " ans
+
+        case "$ans" in
+            1)
+                echo -e "\e[1;33m[INFO]\e[0m Killing processes on port $port..."
+                for entry in $(echo "$net_lines" | awk '{print $7}' | sort -u); do
+                    pid="${entry%%/*}"
+                    if [[ -n "$pid" && "$pid" != "-" ]]; then
+                        kill "$pid" 2>/dev/null || true
+                    fi
+                done
+                sleep 1
+
+                net_lines=$(netstat -nutlp 2>/dev/null | awk -v p=":$port" '$4 ~ p"$" {print}')
+                if [[ -n "$net_lines" ]]; then
+                    echo -e "\e[1;33m[INFO]\e[0m Force killing remaining PIDs on port $port..."
+                    for entry in $(echo "$net_lines" | awk '{print $7}' | sort -u); do
+                        pid="${entry%%/*}"
+                        if [[ -n "$pid" && "$pid" != "-" ]]; then
+                            kill -9 "$pid" 2>/dev/null || true
+                        fi
+                    done
+                    sleep 1
+                fi
+
+                net_lines=$(netstat -nutlp 2>/dev/null | awk -v p=":$port" '$4 ~ p"$" {print}')
+                if [[ -n "$net_lines" ]]; then
+                    echo -e "${RED}[ERROR]${NC} Port $port masih digunakan. Batal."
+                    exit 1
+                fi
+                ;;
+            *)
+                echo -e "${RED}[CANCEL]${NC} Dibatalkan oleh user."
+                exit 0
+                ;;
+        esac
+    fi
+}
+
+# ==========================
+# FUNC: RESTART SEMUA SERVICE XRAY
+# ==========================
+restart_all() {
+    for svc in \
+        xray \
+        xray@config \
+        xray@none
+    do
+        systemctl restart "$svc" >/dev/null 2>&1
+    done
+}
+
+# ==========================
+# AMBIL PORT SEMASA DARI LOG
+# ==========================
+tls=$(grep -w "Vmess Ws Tls" "$LOG" 2>/dev/null | head -n1 | cut -d: -f2 | sed 's/ //g')
+none=$(grep -w "Vmess Ws None Tls" "$LOG" 2>/dev/null | head -n1 | cut -d: -f2 | sed 's/ //g')
+
+clear
+echo -e "\e[0;34m.-----------------------------------------.\e[0m"
+echo -e "\e[0;34m|             \e[1;33mCHANGE PORT XRAY\e[m            \e[0;34m|\e[0m"
+echo -e "\e[0;34m'-----------------------------------------'\e[0m"
+echo -e " \e[1;31m>>\e[0m\e[0;32mChange Port For Xray :\e[0m"
+echo -e "  [1]  Change Port Xray Core TLS        [ ${RED}${tls:-N/A}${NC} ]"
+echo -e "  [2]  Change Port Xray Core None TLS   [ ${RED}${none:-N/A}${NC} ]"
+echo -e " ============================================="
+echo -e "  [x]  Back To Menu Change Port"
+echo -e "  [y]  Go To Main Menu"
+echo -e ""
+read -p "   Select From Options [1-2 or x & y] :  " prot
+echo -e ""
+
+case "$prot" in
+1)
+    read -p " New Port Xray Vmess, Vless & Trojan (TLS): " tls1
+    if [ -z "$tls1" ]; then
+        echo "Please Input Port"
+        exit 0
+    fi
+
+    kill_port_if_used "$tls1"
+
+    sed -i "s/\"port\": $tls/\"port\": $tls1/g" "$CONFIG_TLS"
+
+    if [[ -f "$LOG" ]]; then
+        sed -i "s/^.*Xray Vmess Ws Tls.*/   - Xray Vmess Ws Tls       : $tls1/"               "$LOG"
+        sed -i "s/^.*Xray Vless Ws Tls.*/   - Xray Vless Ws Tls       : $tls1/"               "$LOG"
+        sed -i "s/^.*Websocket SSL(HTTPS).*/   - Websocket SSL(HTTPS)    : $tls1,2096/"       "$LOG"
+        sed -i "s/^.*Xray Trojan Ws Tls.*/   - Xray Trojan Ws Tls      : $tls1/"              "$LOG"
+        sed -i "s/^.*Xray Vless Tcp Xtls.*/   - Xray Vless Tcp Xtls     : $tls1/"          "$LOG"
+        sed -i "s/^.*Xray Trojan Tcp Tls.*/   - Xray Trojan Tcp Tls     : $tls1/"             "$LOG"
+    fi
+
+    iptables -D INPUT -m state --state NEW -m tcp -p tcp --dport "$tls"  -j ACCEPT 2>/dev/null
+    iptables -D INPUT -m state --state NEW -m udp -p udp --dport "$tls"  -j ACCEPT 2>/dev/null
+    iptables -I INPUT -m state --state NEW -m tcp -p tcp --dport "$tls1" -j ACCEPT
+    iptables -I INPUT -m state --state NEW -m udp -p udp --dport "$tls1" -j ACCEPT
+
+    iptables-save > /etc/iptables.up.rules
+    if [[ "$tls" != "$tls1" && -n "$tls" ]]; then
+        sed -i "/--dport $tls /d" /etc/iptables.up.rules
+    fi
+    iptables-restore < /etc/iptables.up.rules
+
+    netfilter-persistent save > /dev/null 2>&1
+    netfilter-persistent reload > /dev/null 2>&1
+
+    restart_all
+
+    clear
+    echo -e "\e[032;1mPort TLS $tls -> $tls1 modified successfully\e[0m"
+    ;;
+
+2)
+    read -p " New Port Xray Vmess, Vless & Trojan (NONE): " none1
+    if [ -z "$none1" ]; then
+        echo "Please Input Port"
+        exit 0
+    fi
+
+    kill_port_if_used "$none1"
+
+    sed -i "s/\"port\": $none/\"port\": $none1/g" "$CONFIG_NONE"
+
+    if [[ -f "$LOG" ]]; then
+        sed -i "s/^.*Xray Vmess Ws None Tls.*/   - Xray Vmess Ws None Tls  : $none1/"        "$LOG"
+        sed -i "s/^.*Xray Vless Ws None Tls.*/   - Xray Vless Ws None Tls  : $none1/"        "$LOG"
+        sed -i "s/^.*Xray Trojan Ws None Tls.*/   - Xray Trojan Ws None Tls : $none1/"       "$LOG"
+        sed -i "s/^.*Xray Trojan Ws None Tls.*/   - Xray Trojan Ws None Tls : $none1/"       "$LOG"
+    fi
+
+    iptables -D INPUT -m state --state NEW -m tcp -p tcp --dport "$none"  -j ACCEPT 2>/dev/null
+    iptables -D INPUT -m state --state NEW -m udp -p udp --dport "$none"  -j ACCEPT 2>/dev/null
+    iptables -I INPUT -m state --state NEW -m tcp -p tcp --dport "$none1" -j ACCEPT
+    iptables -I INPUT -m state --state NEW -m udp -p udp --dport "$none1" -j ACCEPT
+
+    iptables-save > /etc/iptables.up.rules
+    if [[ "$none" != "$none1" && -n "$none" ]]; then
+        sed -i "/--dport $none /d" /etc/iptables.up.rules
+    fi
+    iptables-restore < /etc/iptables.up.rules
+
+    netfilter-persistent save > /dev/null 2>&1
+    netfilter-persistent reload > /dev/null 2>&1
+
+    restart_all
+
+    clear
+    echo -e "\e[032;1mPort NONE $none -> $none1 modified successfully\e[0m"
+    ;;
+
+x)
+    clear
+    change-port
+    ;;
+
+y)
+    clear
+    menu
+    ;;
+
+*)
+    echo "Please enter a correct number"
+    ;;
+esac
