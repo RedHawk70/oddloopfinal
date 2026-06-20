@@ -539,7 +539,7 @@ cat > /usr/local/etc/xray/none.json << END
         "network": "xhttp",
         "security": "none",
         "xhttpSettings": {
-          "path": "/vless",
+          "path": "/xhttp",
           "headers": {},
           "scMaxBufferedPosts": 20,
           "scMaxEachPostBytes": 800000,
