@@ -32,7 +32,7 @@ WantedBy=multi-user.target
 EOF
 
 # ================================
-# SYSTEMD WEBSOCKET HTTP (8080)
+# SYSTEMD WEBSOCKET HTTP (8880)
 # ================================
 cat <<EOF> /etc/systemd/system/ws-http.service
 [Unit]
