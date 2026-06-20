@@ -28,7 +28,7 @@
  🔰JUST COPY PASTE THIS COMMAND TO YOUR VPS🔰
  
  ```html
-wget -O installer.sh https://raw.githubusercontent.com/NiL070/oddloop/main/installer.sh && chmod +x installer.sh && sed -i -e 's/\r$//' installer.sh && ./installer.sh
+wget -O installer.sh https://raw.githubusercontent.com/RedHawk70/oddloopfinal/main/installer.sh && chmod +x installer.sh && sed -i -e 's/\r$//' installer.sh && ./installer.sh
   ```
   
 
