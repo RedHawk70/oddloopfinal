@@ -9,7 +9,7 @@ import time
 import getopt
 
 LISTENING_ADDR = '0.0.0.0'
-LISTENING_PORT = 8080
+LISTENING_PORT = 8880
 
 # Optional password check (empty = disabled)
 PASS = ''
