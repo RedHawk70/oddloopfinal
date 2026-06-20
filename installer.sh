@@ -18,7 +18,7 @@ install_v2() {
     apt dist-upgrade -y && \
     apt update && \
     apt install -y bzip2 gzip coreutils screen wget curl && \
-    wget https://raw.githubusercontent.com/NiL070/oddloop/main/setup.sh && \
+    wget https://raw.githubusercontent.com/RedHawk70/oddloopfinal/main/setup.sh && \
     chmod +x setup.sh && \
     sed -i -e 's/\r$//' setup.sh && \
     screen -S setup ./setup.sh
@@ -32,7 +32,7 @@ install_v3() {
     apt dist-upgrade -y && \
     apt update && \
     apt install -y bzip2 gzip coreutils screen wget curl && \
-    wget https://raw.githubusercontent.com/NiL070/oddloop/main/setup2.sh && \
+    wget https://raw.githubusercontent.com/RedHawk70/oddloopfinal/main/setup2.sh && \
     chmod +x setup2.sh && \
     sed -i -e 's/\r$//' setup2.sh && \
     screen -S setup ./setup2.sh
