@@ -429,12 +429,12 @@ echo "   - Xray HttpUpgrade Tls      : 443"  | tee -a log-install.txt
 echo "   - Xray Trojan Ws Tls        : 443"  | tee -a log-install.txt
 echo "   - Xray Vless Xtls Vision    : 443"  | tee -a log-install.txt
 echo "   - Xray Trojan Tcp Tls       : 443"  | tee -a log-install.txt
-echo "   - Xray Vless Xhttp Tls      : 8443" | tee -a log-install.txt
+echo "   - Xray Vless Xhttp Tls      : 443" | tee -a log-install.txt
 echo "   - Xray Vmess Ws None Tls    : 80"   | tee -a log-install.txt
 echo "   - Xray Vless Ws None Tls    : 80"   | tee -a log-install.txt
 echo "   - Xray HttpUpgrade None Tls : 80"   | tee -a log-install.txt
 echo "   - Xray Trojan Ws None Tls   : 80"   | tee -a log-install.txt
-echo "   - Xray Vless Xhttp None Tls : 8080" | tee -a log-install.txt
+echo "   - Xray Vless Xhttp None Tls : 80" | tee -a log-install.txt
 echo ""  | tee -a log-install.txt
 echo "    [INFORMASI NOOBZVPN ]"  | tee -a log-install.txt
 echo "    ---------------------" | tee -a log-install.txt
