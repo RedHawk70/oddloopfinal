@@ -871,12 +871,10 @@ export vlesslink4="vless://${uuid}@${sts}${domain}:$upgradenone?path=$patchupgra
 export vlesslink5="vless://${uuid}@${sts}${domain}:$xhttptls?path=$patchxhttp&security=tls&encryption=none&type=xhttp&sni=$sni#${user}_${exp}"
 export vlesslink6="vless://${uuid}@${sts}${domain}:$xhttpnone?path=$patchxhttp&encryption=none&host=$sni&type=xhttp#${user}_${exp}"
 
+systemctl stop xray
 systemctl stop xray@config
-sleep 2
-ss -lntp | grep ':443'
-ss -lntp | grep ':1216'
+systemctl start xray
 systemctl start xray@config
-
 systemctl restart xray@none
 
 cat > /home/vps/public_html/vless-$user.txt <<-END
@@ -1023,12 +1021,10 @@ export vlesslink4="vless://${uuid}@${sts}${domain}:$upgradenone?path=$patchupgra
 export vlesslink5="vless://${uuid}@${sts}${domain}:$xhttptls?path=$patchxhttp&security=tls&encryption=none&type=xhttp&sni=$sni#${user}_${exp}"
 export vlesslink6="vless://${uuid}@${sts}${domain}:$xhttpnone?path=$patchxhttp&encryption=none&host=$sni&type=xhttp#${user}_${exp}"
 
+systemctl stop xray
 systemctl stop xray@config
-sleep 2
-ss -lntp | grep ':443'
-ss -lntp | grep ':1216'
+systemctl start xray
 systemctl start xray@config
-
 systemctl restart xray@none
 
 clear
@@ -1107,12 +1103,10 @@ sed -i "/^#vls-http $user $exp $harini $uuid/,/^},{/d" /usr/local/etc/xray/none.
 sed -i "/^#vls-xhttp $user $exp $harini $uuid/,/^},{/d" /usr/local/etc/xray/config.json
 sed -i "/^#vls-xhttp $user $exp $harini $uuid/,/^},{/d" /usr/local/etc/xray/none.json
 
+systemctl stop xray
 systemctl stop xray@config
-sleep 2
-ss -lntp | grep ':443'
-ss -lntp | grep ':1216'
+systemctl start xray
 systemctl start xray@config
-
 systemctl restart xray@none
 
 clear
@@ -1169,12 +1163,10 @@ sed -i "s/#vls $user $exp $harini $uuid/#vls $user $exp4 $harini $uuid/g" /usr/l
 sed -i "s/#vls-xhttp $user $exp $harini $uuid/#vls $user $exp4 $harini $uuid/g" /usr/local/etc/xray/config.json
 sed -i "s/#vls $user $exp $harini $uuid/#vls $user $exp4 $harini $uuid/g" /usr/local/etc/xray/none.json
 
+systemctl stop xray
 systemctl stop xray@config
-sleep 2
-ss -lntp | grep ':443'
-ss -lntp | grep ':1216'
+systemctl start xray
 systemctl start xray@config
-
 systemctl restart xray@none
 service cron restart
 
