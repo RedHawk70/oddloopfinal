@@ -5,7 +5,6 @@ GitUser="RedHawk70"
 
 MYIP=$(curl -sS ipv4.icanhazip.com)
 
-# Warna
 RED='\033[0;31m'
 NC='\033[0m'
 
@@ -13,26 +12,6 @@ LOG=/root/log-install.txt
 CONFIG_TLS=/usr/local/etc/xray/config.json
 CONFIG_NONE=/usr/local/etc/xray/none.json
 
-# ==========================
-# FUNC: VALIDATE PORT
-# ==========================
-validate_port() {
-    local port="$1"
-
-    if [[ -z "$port" ]]; then
-        echo "Please Input Port"
-        exit 0
-    fi
-
-    if ! [[ "$port" =~ ^[0-9]+$ ]] || [[ "$port" -lt 1 || "$port" -gt 65535 ]]; then
-        echo -e "${RED}[ERROR]${NC} Port tidak valid: $port"
-        exit 1
-    fi
-}
-
-# ==========================
-# FUNC: KILL PROSES GUNA PORT
-# ==========================
 kill_port_if_used() {
     local port="$1"
     local net_lines pidprog pid prog unit ans
@@ -113,9 +92,6 @@ kill_port_if_used() {
     fi
 }
 
-# ==========================
-# FUNC: RESTART SEMUA SERVICE XRAY
-# ==========================
 restart_all() {
     for svc in \
         xray \
@@ -126,26 +102,82 @@ restart_all() {
     done
 }
 
-# ==========================
-# FUNC: UPDATE IPTABLES
-# ==========================
-update_iptables_port() {
-    local old_port="$1"
+change_ports_in_config() {
+    local config_file="$1"
     local new_port="$2"
+    shift 2
 
-    if [[ -n "$old_port" && "$old_port" != "$new_port" ]]; then
-        iptables -D INPUT -m state --state NEW -m tcp -p tcp --dport "$old_port" -j ACCEPT 2>/dev/null
-        iptables -D INPUT -m state --state NEW -m udp -p udp --dport "$old_port" -j ACCEPT 2>/dev/null
+    local old_port
+
+    if [[ ! -f "$config_file" ]]; then
+        return
     fi
 
+    for old_port in "$@"; do
+        if [[ -n "$old_port" ]]; then
+            sed -i -E "s/\"port\"[[:space:]]*:[[:space:]]*$old_port/\"port\": $new_port/g" "$config_file"
+        fi
+    done
+}
+
+is_old_port() {
+    local new_port="$1"
+    shift
+
+    local old_port
+
+    for old_port in "$@"; do
+        if [[ -n "$old_port" && "$new_port" == "$old_port" ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+is_ws_ssl_port() {
+    local check_port="$1"
+    local p
+
+    for p in $ws_ssl_ports; do
+        if [[ "$check_port" == "$p" ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+update_iptables_ports() {
+    local new_port="$1"
+    shift
+
+    local old_port
+
+    for old_port in "$@"; do
+        if [[ -n "$old_port" && "$old_port" != "$new_port" ]]; then
+            if ! is_ws_ssl_port "$old_port"; then
+                iptables -D INPUT -m state --state NEW -m tcp -p tcp --dport "$old_port" -j ACCEPT 2>/dev/null
+                iptables -D INPUT -m state --state NEW -m udp -p udp --dport "$old_port" -j ACCEPT 2>/dev/null
+            fi
+        fi
+    done
+
+    iptables -C INPUT -m state --state NEW -m tcp -p tcp --dport "$new_port" -j ACCEPT 2>/dev/null || \
     iptables -I INPUT -m state --state NEW -m tcp -p tcp --dport "$new_port" -j ACCEPT
+
+    iptables -C INPUT -m state --state NEW -m udp -p udp --dport "$new_port" -j ACCEPT 2>/dev/null || \
     iptables -I INPUT -m state --state NEW -m udp -p udp --dport "$new_port" -j ACCEPT
 
     iptables-save > /etc/iptables.up.rules
 
-    if [[ -n "$old_port" && "$old_port" != "$new_port" ]]; then
-        sed -i "/--dport $old_port /d" /etc/iptables.up.rules
-    fi
+    for old_port in "$@"; do
+        if [[ -n "$old_port" && "$old_port" != "$new_port" ]]; then
+            if ! is_ws_ssl_port "$old_port"; then
+                sed -i "/--dport $old_port /d" /etc/iptables.up.rules
+            fi
+        fi
+    done
 
     iptables-restore < /etc/iptables.up.rules
 
@@ -153,18 +185,14 @@ update_iptables_port() {
     netfilter-persistent reload >/dev/null 2>&1
 }
 
-# ==========================
-# AMBIL PORT SEMASA DARI LOG
-# XHTTP SUDAH DIGABUNG:
-# - XHTTP TLS ikut TLS
-# - XHTTP NONE TLS ikut NONE TLS
-# ==========================
 tls=$(grep -w "Xray Vmess Ws Tls" "$LOG" 2>/dev/null | head -n1 | cut -d: -f2 | sed 's/ //g')
 none=$(grep -w "Xray Vmess Ws None Tls" "$LOG" 2>/dev/null | head -n1 | cut -d: -f2 | sed 's/ //g')
+xhttp_tls=$(grep -w "Xray Vless Xhttp Tls" "$LOG" 2>/dev/null | head -n1 | cut -d: -f2 | sed 's/ //g')
+xhttp_none=$(grep -w "Xray Vless Xhttp None Tls" "$LOG" 2>/dev/null | head -n1 | cut -d: -f2 | sed 's/ //g')
+ws_ssl_ports=$(grep -w "Websocket SSL(HTTPS)" "$LOG" 2>/dev/null | head -n1 | cut -d: -f2- | tr ',' ' ' | sed 's/[^0-9 ]/ /g')
 
-# Fallback kalau line utama tiada
-[[ -z "$tls" ]] && tls=$(grep -w "Xray Vless Xhttp Tls" "$LOG" 2>/dev/null | head -n1 | cut -d: -f2 | sed 's/ //g')
-[[ -z "$none" ]] && none=$(grep -w "Xray Vless Xhttp None Tls" "$LOG" 2>/dev/null | head -n1 | cut -d: -f2 | sed 's/ //g')
+[[ -z "$tls" ]] && tls="$xhttp_tls"
+[[ -z "$none" ]] && none="$xhttp_none"
 
 clear
 echo -e "\e[0;34m.-----------------------------------------.\e[0m"
@@ -182,76 +210,63 @@ echo -e ""
 
 case "$prot" in
 1)
-    read -p " New Port Xray Core TLS + XHTTP TLS: " tls1
-    validate_port "$tls1"
+    read -p " New Port Xray Vmess, Vless & Trojan (TLS): " tls1
+    if [ -z "$tls1" ]; then
+        echo "Please Input Port"
+        exit 0
+    fi
 
-    if [[ -n "$tls" && "$tls" == "$tls1" ]]; then
-        echo -e "\e[1;33m[INFO]\e[0m Port TLS sudah sama: $tls1"
-    else
+    if ! is_old_port "$tls1" "$tls" "$xhttp_tls"; then
         kill_port_if_used "$tls1"
     fi
 
-    if [[ -f "$CONFIG_TLS" ]]; then
-        if [[ -n "$tls" ]]; then
-            sed -i "s/\"port\": $tls/\"port\": $tls1/g" "$CONFIG_TLS"
-        else
-            echo -e "${RED}[WARNING]${NC} Port lama TLS tidak dijumpai dalam log. Config tidak diubah."
-        fi
-    fi
+    change_ports_in_config "$CONFIG_TLS" "$tls1" "$tls" "$xhttp_tls"
 
     if [[ -f "$LOG" ]]; then
         sed -i "s/^.*Xray Vmess Ws Tls.*/   - Xray Vmess Ws Tls         : $tls1/" "$LOG"
         sed -i "s/^.*Xray Vless Ws Tls.*/   - Xray Vless Ws Tls         : $tls1/" "$LOG"
-        sed -i "s/^.*Websocket SSL(HTTPS).*/   - Websocket SSL(HTTPS)      : $tls1/" "$LOG"
         sed -i "s/^.*Xray HttpUpgrade Tls.*/   - Xray HttpUpgrade Tls      : $tls1/" "$LOG"
         sed -i "s/^.*Xray Trojan Ws Tls.*/   - Xray Trojan Ws Tls        : $tls1/" "$LOG"
         sed -i "s/^.*Xray Vless Xtls Vision.*/   - Xray Vless Xtls Vision    : $tls1/" "$LOG"
         sed -i "s/^.*Xray Trojan Tcp Tls.*/   - Xray Trojan Tcp Tls       : $tls1/" "$LOG"
-
-        # XHTTP TLS digabung dengan Core TLS
         sed -i "s/^.*Xray Vless Xhttp Tls.*/   - Xray Vless Xhttp Tls      : $tls1/" "$LOG"
     fi
 
-    update_iptables_port "$tls" "$tls1"
+    update_iptables_ports "$tls1" "$tls" "$xhttp_tls"
+
     restart_all
 
     clear
-    echo -e "\e[032;1mPort TLS + XHTTP TLS ${tls:-N/A} -> $tls1 modified successfully\e[0m"
+    echo -e "\e[032;1mPort TLS $tls -> $tls1 modified successfully\e[0m"
     ;;
 
 2)
-    read -p " New Port Xray Core None TLS + XHTTP None TLS: " none1
-    validate_port "$none1"
+    read -p " New Port Xray Vmess, Vless & Trojan (NONE): " none1
+    if [ -z "$none1" ]; then
+        echo "Please Input Port"
+        exit 0
+    fi
 
-    if [[ -n "$none" && "$none" == "$none1" ]]; then
-        echo -e "\e[1;33m[INFO]\e[0m Port None TLS sudah sama: $none1"
-    else
+    if ! is_old_port "$none1" "$none" "$xhttp_none"; then
         kill_port_if_used "$none1"
     fi
 
-    if [[ -f "$CONFIG_NONE" ]]; then
-        if [[ -n "$none" ]]; then
-            sed -i "s/\"port\": $none/\"port\": $none1/g" "$CONFIG_NONE"
-        else
-            echo -e "${RED}[WARNING]${NC} Port lama None TLS tidak dijumpai dalam log. Config tidak diubah."
-        fi
-    fi
+    change_ports_in_config "$CONFIG_NONE" "$none1" "$none" "$xhttp_none"
 
     if [[ -f "$LOG" ]]; then
         sed -i "s/^.*Xray Vmess Ws None Tls.*/   - Xray Vmess Ws None Tls    : $none1/" "$LOG"
         sed -i "s/^.*Xray Vless Ws None Tls.*/   - Xray Vless Ws None Tls    : $none1/" "$LOG"
         sed -i "s/^.*Xray Trojan Ws None Tls.*/   - Xray Trojan Ws None Tls   : $none1/" "$LOG"
         sed -i "s/^.*Xray HttpUpgrade None Tls.*/   - Xray HttpUpgrade None Tls : $none1/" "$LOG"
-
-        # XHTTP None TLS digabung dengan Core None TLS
         sed -i "s/^.*Xray Vless Xhttp None Tls.*/   - Xray Vless Xhttp None Tls : $none1/" "$LOG"
     fi
 
-    update_iptables_port "$none" "$none1"
+    update_iptables_ports "$none1" "$none" "$xhttp_none"
+
     restart_all
 
     clear
-    echo -e "\e[032;1mPort NONE TLS + XHTTP NONE TLS ${none:-N/A} -> $none1 modified successfully\e[0m"
+    echo -e "\e[032;1mPort NONE $none -> $none1 modified successfully\e[0m"
     ;;
 
 x)
