@@ -436,6 +436,11 @@ echo "   - Xray HttpUpgrade None Tls : 80"   | tee -a log-install.txt
 echo "   - Xray Trojan Ws None Tls   : 80"   | tee -a log-install.txt
 echo "   - Xray Vless Xhttp None Tls : 80" | tee -a log-install.txt
 echo ""  | tee -a log-install.txt
+echo "    [OTHER PORT FOR XRAY ]"  | tee -a log-install.txt
+echo "    ---------------------" | tee -a log-install.txt
+echo "   - Xray Tls                  : 2083,2087,8443,2096"  | tee -a log-install.txt
+echo "   - Xray None Tls             : 2052,8080,2082,2095"  | tee -a log-install.txt
+echo ""  | tee -a log-install.txt
 echo "    [INFORMASI NOOBZVPN ]"  | tee -a log-install.txt
 echo "    ---------------------" | tee -a log-install.txt
 echo "   - Noobzvpn Tls              : 2087"  | tee -a log-install.txt
