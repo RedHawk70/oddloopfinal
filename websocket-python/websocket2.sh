@@ -10,7 +10,7 @@ GitUser="RedHawk70"
 namafolder="websocket-python"
 
 # ================================
-# SYSTEMD WEBSOCKET HTTPS (8443)
+# SYSTEMD WEBSOCKET HTTPS (2053)
 # ================================
 cat <<EOF> /etc/systemd/system/ws-https.service
 [Unit]
