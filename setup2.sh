@@ -428,7 +428,6 @@ echo "   - Xray Vless Ws Tls         : 443"  | tee -a log-install.txt
 echo "   - Xray HttpUpgrade Tls      : 443"  | tee -a log-install.txt
 echo "   - Xray Trojan Ws Tls        : 443"  | tee -a log-install.txt
 echo "   - Xray Vless Xtls Vision    : 443"  | tee -a log-install.txt
-echo "   - Xray Trojan Tcp Tls       : 443"  | tee -a log-install.txt
 echo "   - Xray Vless Xhttp Tls      : 443" | tee -a log-install.txt
 echo "   - Xray Vmess Ws None Tls    : 80"   | tee -a log-install.txt
 echo "   - Xray Vless Ws None Tls    : 80"   | tee -a log-install.txt
