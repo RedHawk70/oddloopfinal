@@ -45,25 +45,29 @@ wget -O installer.sh https://raw.githubusercontent.com/RedHawk70/oddloopfinal/ma
   - OHP SSH                   : 8686
   - OHP OpenVPN               : 8787
   - Websocket SSH(HTTP)       : (80)V2.0, (8880)V3.0
-  - Websocket SSL(HTTPS)      : 443, 222
+  - Websocket SSL(HTTPS)      : (443,222)V2.0, (2053)V3.0
   - Websocket OpenVPN         : 2084
   - Squid Proxy               : 3128, 8000
   - Badvpn                    : 7100, 7200, 7300
   - Nginx                     : 81
   - XRAY Vmess Ws Tls         : 443
-  - XRAY Vless Ws Tls         : 443
+  - XRAY Vless Ws Tls         : 443 (Support Multipath For Script V3.0)
   - XRAY Trojan Ws Tls        : 443
   - XRAY Vless Tcp Xtls       : 443
   - XRAY Trojan Tcp Tls       : 443
   - XRAY HttpUpgrade Tls      : 443 (V3.0)
-  - XRAY Vless Xhttp Tls      : 8443 (V3.0)
+  - XRAY Vless Xhttp Tls      : 443 (V3.0)
   - XRAY Vmess Ws None Tls    : 80
   - XRAY Vless Ws None Tls    : 80 (Support Multipath For Script V3.0)
   - XRAY Trojan Ws None Tls   : 80
   - XRAY HttpUpgrade None Tls : 80 (V3.0)
-  - XRAY Vless Xhttp None Tls : 8080 (V3.0)
+  - XRAY Vless Xhttp None Tls : 80 (V3.0)
   - Noobzvpn Tls              : 2087
   - Noobzvpn None Tls         : 2086
+
+⚜️OTHER PORTS FOR ALL XRAY V3.0 ONLY⚜️
+- Xray Tls                  : 8443,2083,2096
+- Xray None Tls             : 8080,2052,2082,2095
 
 ⚜️CUSTOM/MULTI PATH PORT FOR SCRIPT V2.0⚜️
 - Vless None Tls              : 8080
