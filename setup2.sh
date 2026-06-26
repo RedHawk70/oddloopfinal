@@ -437,7 +437,7 @@ echo "   - Xray Vless Xhttp None Tls : 80" | tee -a log-install.txt
 echo ""  | tee -a log-install.txt
 echo "    [OTHER PORTS FOR ALL XRAY ]"  | tee -a log-install.txt
 echo "    ---------------------" | tee -a log-install.txt
-echo "   - Xray Tls                  : 8443,2083,2087,2096"  | tee -a log-install.txt
+echo "   - Xray Tls                  : 8443,2083,2096"  | tee -a log-install.txt
 echo "   - Xray None Tls             : 8080,2052,2082,2095"  | tee -a log-install.txt
 echo ""  | tee -a log-install.txt
 echo "    [INFORMASI NOOBZVPN ]"  | tee -a log-install.txt
