@@ -676,11 +676,11 @@ netfilter-persistent save
 netfilter-persistent reload
 
 # addons open port tls & ntls #NiLphreakz@CreditToNevermoreSSH
-iptables -t nat -C PREROUTING -p tcp -m multiport --dports 2083,2087,8443,2096 -j REDIRECT --to-ports 443 2>/dev/null || \
-iptables -t nat -A PREROUTING -p tcp -m multiport --dports 2083,2087,8443,2096 -j REDIRECT --to-ports 443
+iptables -t nat -C PREROUTING -p tcp -m multiport --dports 8443,2083,2096 -j REDIRECT --to-ports 443 2>/dev/null || \
+iptables -t nat -A PREROUTING -p tcp -m multiport --dports 8443,2083,2096 -j REDIRECT --to-ports 443
 
-iptables -t nat -C PREROUTING -p tcp -m multiport --dports 2052,8080,2082,2095 -j REDIRECT --to-ports 80 2>/dev/null || \
-iptables -t nat -A PREROUTING -p tcp -m multiport --dports 2052,8080,2082,2095 -j REDIRECT --to-ports 80
+iptables -t nat -C PREROUTING -p tcp -m multiport --dports 8080,2052,2082,2095 -j REDIRECT --to-ports 80 2>/dev/null || \
+iptables -t nat -A PREROUTING -p tcp -m multiport --dports 8080,2052,2082,2095 -j REDIRECT --to-ports 80
 # save rules
 iptables-save > /etc/iptables.up.rules
 iptables-restore < /etc/iptables.up.rules
