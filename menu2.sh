@@ -75,7 +75,7 @@ trtls=$(grep -c -E "^#trx " "/usr/local/etc/xray/config.json")
 # TOTAL ACC CREATE  TROJAN WS TLS
 trws=$(grep -c -E "^#trws " "/usr/local/etc/xray/config.json")
 # TOTAL ACC CREATE OVPN SSH
-total_ssh="$(awk -F: '$3 >= 1000 && $1 != "nobody" {print $1}' /etc/passwd | wc -l)"
+total_ssh="$(awk -F: '$3 >= 1000 && $1 != "nobody" && $1 != "debian" && $7 == "/bin/false" {print $1}' /etc/passwd | wc -l)"
 # PROVIDED
 creditt=$(cat /root/provided)
 # BANNER COLOUR
