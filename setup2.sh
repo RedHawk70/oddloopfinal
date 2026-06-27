@@ -239,8 +239,8 @@ echo "██║╚██╗██║██║██║     ██╔═══╝
 echo "██║ ╚████║██║███████╗██║     ██║  ██║██║  ██║███████╗██║  ██║██║  ██╗███████╗";
 echo "╚═╝  ╚═══╝╚═╝╚══════╝╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝";
 echo "                                                              "
-echo -e "${Lyellow}⚡PREMIUM SCRIPT V3.0 (MULTIPORT + LATEST XRAYCORE + SUPPORT MULTIPATH ) ⚡${RESET}"
-echo -e "${Lyellow}           ⚡DEFAULT XRAYCORE MOD V25.3.15 + NEW SERVICES ⚡${RESET}"
+echo -e "${Lyellow}⚡PREMIUM SCRIPT V3.0 FINAL (MULTIPORT + LATEST XRAYCORE + SUPPORT MULTIPATH ) ⚡${RESET}"
+echo -e "${Lyellow}           ⚡DEFAULT XRAYCORE MOD V26.2.6-1 + NEW SERVICES ⚡${RESET}"
 echo -e "${green}.............................................................................${RESET}"
 echo
 sleep 1
