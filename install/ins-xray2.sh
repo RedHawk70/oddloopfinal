@@ -712,8 +712,8 @@ chmod +x certv2ray
 chmod +x trojaan
 chmod +x xraay
 
-# // Install XrayCore Mod V.25.10.15 (Custompath)
-mv /usr/local/bin/xray /usr/local/bin/xray.bakk && wget -q -O /usr/local/bin/xray "https://github.com/howitzer07/xraycore/releases/download/v25.10.15/xray-linux-amd64" && chmod 755 /usr/local/bin/xray
+# // Install XrayCore Mod V.26.2.6-1 (Custompath)
+mv /usr/local/bin/xray /usr/local/bin/xray.bakk && wget -q -O /usr/local/bin/xray "https://github.com/RedHawk70/xraycore/releases/download/xrmodv26.2.6-1/Xray-linux-64-v26.2.6-1" && chmod 755 /usr/local/bin/xray
 
 cd
 rm -f ins-xray.sh
