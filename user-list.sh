@@ -1,41 +1,45 @@
+#!/bin/bash
+# Created by NiLphreakz
 #wget https://github.com/${GitUser}/
 GitUser="RedHawk70"
-#IZIN SCRIPT
+
+# IZIN SCRIPT
 MYIP=$(curl -sS ipv4.icanhazip.com)
-MYIP=$(curl -s ipinfo.io/ip )
-MYIP=$(curl -sS ipv4.icanhazip.com)
-MYIP=$(curl -sS ifconfig.me )
-clear 
+
+clear
+
 if [ -f /etc/debian_version ]; then
-	UIDN=1000
+    UIDN=1000
 elif [ -f /etc/redhat-release ]; then
-	UIDN=500
+    UIDN=500
 else
-	UIDN=500
+    UIDN=500
 fi
+
 clear
 echo " "
 echo " "
-echo "===========================================";
+echo "==========================================="
 echo " "
 echo "-----------------------------------"
 echo "        USER ACCOUNTS LIST         "
 echo "-----------------------------------"
-echo "[USERNAME]   -   [DATE EXPIRED]  "
+echo "[USERNAME]   -   [DATE EXPIRED]"
 echo " "
-while read ceklist
+
+while IFS=: read -r AKUN x ID GID GECOS HOME SHELL
 do
-        AKUN="$(echo $ceklist | cut -d: -f1)"
-        ID="$(echo $ceklist | grep -v nobody | cut -d: -f3)"
-        exp="$(chage -l $AKUN | grep "Account expires" | awk -F": " '{print $2}')"
-        if [[ $ID -ge $UIDN ]]; then
+    if [[ "$ID" -ge "$UIDN" && "$AKUN" != "nobody" && "$AKUN" != "debian" && "$AKUN" != "ubuntu" && "$SHELL" == "/bin/false" ]]; then
+        exp="$(chage -l "$AKUN" | grep "Account expires" | awk -F": " '{print $2}')"
         printf "%-17s %2s\n" "$AKUN" "$exp"
-        fi
+    fi
 done < /etc/passwd
-JUMLAH="$(awk -F: '$3 >= '$UIDN' && $1 != "nobody" {print $1}' /etc/passwd | wc -l)"
+
+JUMLAH="$(awk -F: -v uid="$UIDN" '$3 >= uid && $1 != "nobody" && $1 != "debian" && $1 != "ubuntu" && $7 == "/bin/false" {print $1}' /etc/passwd | wc -l)"
+
 echo "-------------------------------------"
 echo "Number Of User Accounts: $JUMLAH USERS"
 echo "-------------------------------------"
 echo " "
-echo "===========================================";
-echo " ";
+echo "==========================================="
+echo " "
