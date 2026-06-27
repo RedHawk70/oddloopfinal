@@ -131,7 +131,7 @@ cd noobzvpns && chmod +x uninstall.sh && ./uninstall.sh
 wget https://raw.githubusercontent.com/NiL070/addon/main/udp-custom/udp.sh && bash udp.sh
 ;;
 88)
-wget -q -O /usr/bin/xcorechanger "https://raw.githubusercontent.com/NiL070/XrayCoreChanger/main/xcorechanger.sh" && chmod +x /usr/bin/xcorechanger && xcorechanger
+wget -q -O /usr/bin/xcorechanger "https://raw.githubusercontent.com/RedHawk70/xraycore/main/xcorechanger.sh" && chmod +x /usr/bin/xcorechanger && xcorechanger
 ;;
 99)
 change-dropbear
