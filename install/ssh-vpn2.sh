@@ -363,6 +363,7 @@ wget -O wbmn "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/web
 wget -O xp "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/xp.sh"
 wget -O xp2 "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/xp2.sh"
 wget -O kernel-updt "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/kernel.sh"
+wget -O harden-kernel "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/more-option/harden-kernel.sh"
 wget -O user-list "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/more-option/user-list.sh"
 wget -O user-lock "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/more-option/user-lock.sh"
 wget -O user-unlock "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/more-option/user-unlock.sh"
@@ -417,6 +418,7 @@ chmod +x xp2
 chmod +x kernel-updt
 chmod +x user-list
 chmod +x user-lock
+chmod +x harden-kernel
 chmod +x user-unlock
 chmod +x user-password
 chmod +x antitorrent
@@ -453,6 +455,7 @@ sed -i 's/\r$//' /usr/bin/install-figlet
 sed -i 's/\r$//' /usr/bin/cek-xray
 #quota-vless
 install-figlet
+harden-kernel
 echo "0 1 * * * root delete" >> /etc/crontab
 echo "0 2 * * * root xp" >> /etc/crontab
 echo "0 5 * * * root reboot" >> /etc/crontab
