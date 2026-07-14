@@ -332,6 +332,7 @@ netfilter-persistent reload
 cd /usr/bin
 #wget -O quota-vless "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/menu/quota-vless.sh"
 wget -O proxy-warp "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/proxy-warp.sh"
+wget -O socks-manager "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/socks-manager.sh"
 wget -O change-dropbear "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/change-dropbear.sh"
 wget -O menu-noobzvpn "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/menu-noobzvpn.sh"
 wget -O add-host "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/add-host.sh"
@@ -431,6 +432,7 @@ chmod +x ssh2
 chmod +x autoreboot
 chmod +x bbr
 chmod +x port-ohp
+chmod +x socks-manager
 chmod +x port-xray
 chmod +x panel-domain
 chmod +x system
