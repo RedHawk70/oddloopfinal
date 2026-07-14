@@ -121,6 +121,7 @@ ip6menu
 ;;
 33)
 socks-manager
+;;
 44)
 wget -q -O /usr/sbin/setup2 "https://raw.githubusercontent.com/NiL070/cfwarp/main/setup.sh" && chmod +x /usr/sbin/setup2 && setup2
 ;;
