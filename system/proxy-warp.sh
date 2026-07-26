@@ -1,21 +1,15 @@
 #!/bin/bash
-# XRAY WARP / FREEDOM / SOCKS5 MENU  (full-fix + auto DNS/QUIC untuk full-tunnel)
+# XRAY WARP / FREEDOM / SOCKS5 MENU  (+ preset domain, + auto DNS/QUIC full-tunnel)
 # - TARGET JSON LIST ONLY (no jq), KEEP #COMMENTS
 # - Domain list managed from FIRST rule that contains: "domain": [ ... ]
 # - MODE switch (warp/direct/socks5) only changes that rule's outboundTag
 # - SKOP: setiap tukar WARP/SOCKS5 boleh pilih -> (1) domain list sahaja / (2) SEMUA trafik
-#         skop dikawal oleh outbound PERTAMA: direct=list sahaja, warp/socks5=semua trafik
-# - AUTO DNS/QUIC FIX (bila SEMUA trafik / full-tunnel):
-#     * routing "domainStrategy" -> "AsIs"  (biar WARP resolve remote atas TCP, socks5h)
-#     * sisip rule: DNS port 53 -> direct   (elak UDP DNS mati kat WARP SOCKS5 TCP-only)
-#     * sisip rule: QUIC udp 443 -> blocked (paksa fallback TCP; YouTube dll jalan)
-#   Bila balik list-sahaja/Freedom -> domainStrategy "IPIfNonMatch" + buang rule helper tu
-# - Marker comment auto-follows mode (WARP / FREEDOM / SOCKS5), letak atas "domain": [
-# - SOCKS5 mode: auto-insert outbound "tag":"socks5" kalau belum ada
-# - Status SOCKS rujuk WARP local (127.0.0.1:40000) sahaja
+# - AUTO DNS/QUIC FIX (full-tunnel): domainStrategy AsIs + DNS 53->direct + QUIC udp443->blocked
+# - PRESET: muat senarai domain besar (streaming/bank/CDN/Astro/RTMklik) + kekalkan custom
+# - Marker comment auto-follows mode; SOCKS5 outbound auto-insert; status SOCKS = WARP local
 # - AUTO-RESTART: config dulu -> sleep 3 -> none  (reset-failed + config test + verify aktif)
-# - UI auto-fit lebar terminal (PC / telefon), tiada border cacat
-# NOTA: routing domain perlukan "sniffing" enabled pada inbounds (uruskan di config, bukan script ni)
+# - UI auto-fit lebar terminal (PC / telefon)
+# NOTA: routing domain perlukan "sniffing" enabled pada inbounds (uruskan di config)
 set -euo pipefail
 
 XRAY_DIR="/usr/local/etc/xray"
@@ -29,7 +23,6 @@ WARP_ADDR="127.0.0.1"
 WARP_PORT="40000"
 FLUSH_PLACEHOLDER="domain:example.net"
 
-# SOCKS5 outbound (auto-managed)
 SOCKS5_TAG="socks5"
 SOCKS5_ADDR=""
 SOCKS5_PORT=""
@@ -56,18 +49,222 @@ need_targets() {
   [ "$any" -eq 1 ] || die "No target JSON found in the configured list."
 }
 
+# ===== PRESET DOMAIN (# = kategori, selain tu = domain) =====
+preset_domains_raw() {
+cat <<'EOF'
+# ===== TEST / SEMAK IP =====
+example.net
+check-host.net
+speedtestcustom.com
+fireprobe.net
+whatismyip.com
+# ===== PINTEREST =====
+pinterest.com
+pinimg.com
+pin.it
+# ===== KERAJAAN MALAYSIA =====
+gov.my
+mil.my
+myeg.com.my
+digital-id.my
+myid.my
+e-maik.my
+# ===== NETFLIX =====
+netflix.com
+netflix.net
+nflxext.com
+nflximg.net
+nflxso.net
+nflxvideo.net
+# ===== YOUTUBE =====
+youtube.com
+youtu.be
+ytimg.com
+googlevideo.com
+ggpht.com
+# ===== DISNEY+ / HOTSTAR =====
+disneyplus.com
+disney-plus.net
+dssott.com
+hotstar.com
+hotstarext.com
+# ===== PRIME VIDEO =====
+primevideo.com
+amazonvideo.com
+aiv-cdn.net
+pv-cdn.net
+# ===== HBO MAX / MAX =====
+hbo.com
+hbomax.com
+max.com
+hbomaxcdn.com
+# ===== APPLE TV+ =====
+tv.apple.com
+# ===== HULU =====
+hulu.com
+hulustream.com
+# ===== OTT ASIA =====
+viu.com
+viu.tv
+iq.com
+iqiyi.com
+wetv.vip
+bahamut.com.tw
+gamer.com.tw
+bilibili.com
+bilivideo.com
+# ===== ANIME =====
+crunchyroll.com
+crunchyroll.net
+vrv.co
+viki.com
+rakuten.tv
+vidio.com
+# ===== LIVE / VIDEO =====
+twitch.tv
+ttvnw.net
+jtvnw.net
+dailymotion.com
+vimeo.com
+# ===== SPORTS =====
+dazn.com
+beinsports.com
+beinconnect.com.my
+# ===== US OTT =====
+paramountplus.com
+peacocktv.com
+bbc.co.uk
+iplayer.bbc.co.uk
+# ===== MUZIK =====
+spotify.com
+scdn.co
+spotifycdn.com
+joox.com
+music.apple.com
+tidal.com
+deezer.com
+# ===== ASTRO =====
+astro.com.my
+astro.com
+astrogo.astro.com.my
+sooka.my
+njoi.com.my
+astronetworks.com.my
+astro-cdn.com
+# ===== RTMKLIK / RTM =====
+rtmklik.rtm.gov.my
+rtmklik.my
+rtm.gov.my
+# ===== OTT MALAYSIA =====
+tonton.com.my
+dimsum.my
+# ===== IMVU =====
+imvu.com
+imvu.net
+im.vu
+# ===== BANK TEMPATAN - MAYBANK =====
+maybank.com
+maybank.com.my
+maybank2u.com.my
+maybank2e.net
+mae.com.my
+# ===== BANK TEMPATAN - CIMB =====
+cimb.com.my
+cimbbank.com.my
+cimbclicks.com.my
+cimbocto.com.my
+# ===== BANK TEMPATAN - PUBLIC BANK =====
+publicbank.com.my
+pbebank.com
+# ===== BANK TEMPATAN - RHB =====
+rhbgroup.com
+rhb.com.my
+rhbnow.com
+# ===== BANK TEMPATAN - HONG LEONG =====
+hlb.com.my
+hongleongconnect.my
+hongleong.com.my
+# ===== BANK TEMPATAN - AMBANK =====
+ambank.com.my
+ambankgroup.com
+amonline.com.my
+# ===== BANK TEMPATAN - ALLIANCE =====
+alliancebank.com.my
+allianceonline.com.my
+# ===== BANK TEMPATAN - AFFIN =====
+affinbank.com.my
+affinalways.com
+affinonline.com
+# ===== BANK TEMPATAN - BANK ISLAM =====
+bankislam.com
+bankislam.com.my
+# ===== BANK TEMPATAN - MUAMALAT =====
+muamalat.com.my
+# ===== BANK TEMPATAN - BANK RAKYAT =====
+bankrakyat.com.my
+irakyat.com.my
+# ===== BANK TEMPATAN - BSN =====
+bsn.com.my
+mybsn.com.my
+# ===== BANK TEMPATAN - AGROBANK =====
+agrobank.com.my
+agronet.com.my
+# ===== BANK TEMPATAN - MBSB =====
+mbsbbank.com
+# ===== BANK TEMPATAN - AL RAJHI =====
+alrajhibank.com.my
+# ===== BANK TEMPATAN - KFH =====
+kfh.com.my
+# ===== BANK ASING =====
+hsbc.com.my
+sc.com
+ocbc.com
+ocbc.com.my
+uob.com.my
+uob.com
+citibank.com.my
+bankofchina.com
+# ===== PEMBAYARAN / FPX / PAYNET =====
+paynet.my
+duitnow.my
+jompay.com.my
+mepsfpx.com.my
+fpx.com.my
+# ===== CLOUD =====
+amazonaws.com
+# ===== CDN - AKAMAI =====
+akamai.net
+akamaized.net
+akamaihd.net
+akamaiedge.net
+akamaitechnologies.com
+edgekey.net
+edgesuite.net
+# ===== CDN - AMAZON CLOUDFRONT =====
+cloudfront.net
+# ===== CDN - FASTLY =====
+fastly.net
+fastlylb.net
+fastly.com
+# ===== CDN - GOOGLE =====
+googleusercontent.com
+gstatic.com
+googleapis.com
+1e100.net
+EOF
+}
+
 # --------- SOCKS listen check ---------
 is_listening() {
   local addr="$1" port="$2"
   ss -lnt 2>/dev/null | awk -v p=":$port" '$1=="LISTEN" && index($4,p)>0 {found=1} END{exit(found?0:1)}'
 }
 
-# Status SOCKS = WARP local proxy (127.0.0.1:40000) sahaja
 get_global_socks() {
   if is_listening "$WARP_ADDR" "$WARP_PORT"; then echo "$WARP_PORT"; else echo "OFF"; fi
 }
 
-# --------- MODE detect (dari domain rule) ---------
+# --------- MODE detect ---------
 get_mode_file() {
   local f="$1"
   awk '
@@ -101,7 +298,7 @@ get_global_mode() {
   else echo "mixed"; fi
 }
 
-# --------- SCOPE detect (dari outbound PERTAMA) ---------
+# --------- SCOPE detect ---------
 get_first_outbound_file() {
   local f="$1"
   awk '
@@ -116,7 +313,6 @@ get_first_outbound_file() {
   ' "$f" 2>/dev/null || true
 }
 
-# "list" jika default outbound = direct, selainnya "all" (full tunnel)
 get_global_scope() {
   local f first
   for f in "${CFG_LIST[@]}"; do
@@ -128,7 +324,6 @@ get_global_scope() {
   echo "list"
 }
 
-# Adakah patch full-tunnel (DNS/QUIC helper) sudah dipasang?
 get_fulltunnel_applied() {
   local f
   for f in "${CFG_LIST[@]}"; do
@@ -193,6 +388,31 @@ apply_domains_file() {
   ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 }
 
+# Ganti SELURUH isi array "domain" dengan kandungan fail BLK (utk preset)
+replace_domain_block_file() {
+  local f="$1" blk="$2"
+  awk -v BLK="$blk" '
+    BEGIN{inRule=0; brace=0; inDom=0; done=0}
+    {
+      line=$0
+      if(line ~ /{[ \t]*$/){ inRule=1; brace=1 }
+      else if(inRule==1){ if(index(line,"{")>0) brace++; if(index(line,"}")>0) brace-- }
+      if(done==0 && inRule==1 && line ~ /"domain"[ \t]*:[ \t]*\[/){
+        print line
+        while((getline l < BLK) > 0) print l
+        close(BLK)
+        inDom=1; next
+      }
+      if(done==0 && inDom==1){
+        if(line ~ /^[ \t]*][ \t]*,?[ \t]*$/){ print line; inDom=0; done=1; next }
+        next
+      }
+      print line
+      if(inRule==1 && brace<=0){ inRule=0; brace=0 }
+    }
+  ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+
 build_global_domains() {
   local f d
   GLOBAL_DOMAINS=(); declare -gA _SEEN=()
@@ -215,7 +435,7 @@ show_domains_all() {
     echo -e "${PINK}File #${idx}:${RESET} ${DIM}$(basename "$f")${RESET}"
     mapfile -t arr < <(domains_list_file_raw "$f" | sed '/^$/d' || true)
     if [ "${#arr[@]}" -eq 0 ]; then echo "  - (empty)"
-    else for i in "${!arr[@]}"; do printf "  %2d) %s\n" $((i+1)) "${arr[$i]}"; done; fi
+    else for i in "${!arr[@]}"; do printf "  %3d) %s\n" $((i+1)) "${arr[$i]}"; done; fi
     echo; shown=1
   done
   [ "$shown" -eq 1 ] || echo -e "${YELLOW}No target file found.${RESET}"
@@ -228,7 +448,7 @@ show_domains_global() {
   echo -e "${WHITE}${BOLD}Domains (GLOBAL LIST)${RESET}  ${DIM}- merged, de-duplicated${RESET}"
   echo -e "${ORANGE}--------------------------------------${RESET}"
   if [ "${#GLOBAL_DOMAINS[@]}" -eq 0 ]; then echo "  - (empty)"
-  else local i; for i in "${!GLOBAL_DOMAINS[@]}"; do printf "  %2d) %s\n" $((i+1)) "${GLOBAL_DOMAINS[$i]}"; done; fi
+  else local i; for i in "${!GLOBAL_DOMAINS[@]}"; do printf "  %3d) %s\n" $((i+1)) "${GLOBAL_DOMAINS[$i]}"; done; fi
   echo -e "${ORANGE}--------------------------------------${RESET}"; echo
 }
 
@@ -258,7 +478,7 @@ set_marker_file() {
   ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 }
 
-# --------- OUTBOUND ORDER (letak tag tertentu jadi PERTAMA = default outbound) ---------
+# --------- OUTBOUND ORDER ---------
 ensure_first_outbound_file() {
   local f="$1" want="$2"
   awk -v WANT="$want" '
@@ -302,7 +522,6 @@ ensure_first_outbound_file() {
 ensure_direct_first_file() { ensure_first_outbound_file "$1" "direct"; }
 
 # --------- DNS/QUIC full-tunnel helpers ---------
-# Tukar routing "domainStrategy" (scoped dalam block "routing" sahaja; TAK sentuh outbound domainStrategy)
 set_domain_strategy_file() {
   local f="$1" strat="$2"
   awk -v STRAT="$strat" '
@@ -318,7 +537,6 @@ set_domain_strategy_file() {
   ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 }
 
-# Buang rule helper full-tunnel (marker + signature DNS/QUIC, single-line)
 remove_fulltunnel_rules_file() {
   local f="$1"
   awk '
@@ -329,7 +547,6 @@ remove_fulltunnel_rules_file() {
   ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 }
 
-# Tambah rule helper full-tunnel di ATAS array "rules" (buang dulu supaya tak duplicate)
 add_fulltunnel_rules_file() {
   local f="$1"
   remove_fulltunnel_rules_file "$f"
@@ -348,7 +565,6 @@ add_fulltunnel_rules_file() {
   ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 }
 
-# Terap tweak DNS/QUIC ikut skop
 apply_dns_tweak_file() {
   local f="$1" scope="$2"
   if [ "$scope" = "all" ]; then
@@ -475,7 +691,7 @@ set_mode_file() {
   ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 }
 
-# --------- SCOPE prompt (echoes hanya "list" / "all" ke stdout) ---------
+# --------- SCOPE prompt ---------
 prompt_scope() {
   local title="$1" a
   {
@@ -491,7 +707,6 @@ prompt_scope() {
   esac
 }
 
-# Terap mode + skop (+ DNS/QUIC tweak) pada semua fail
 apply_mode_all() {
   local mode="$1" scope="$2" changed=0 skipped=0 f firsttag
   if [ "$scope" = "all" ]; then firsttag="$mode"; else firsttag="direct"; fi
@@ -517,10 +732,7 @@ do_warp() {
   apply_mode_all "warp" "$scope"
 }
 
-do_freedom() {
-  # Freedom = semua DIRECT (skop list, IPIfNonMatch, tiada helper)
-  apply_mode_all "direct" "list"
-}
+do_freedom() { apply_mode_all "direct" "list"; }
 
 enable_socks5_mode() {
   local f need_details=0
@@ -562,10 +774,81 @@ edit_socks5_server() {
     backup "$f"
     if socks5_outbound_exists_file "$f"; then update_socks5_outbound_file "$f"
     else insert_socks5_outbound_file "$f"; fi
-    ensure_first_outbound_file "$f" "$keep"   # kekalkan skop semasa
+    ensure_first_outbound_file "$f" "$keep"
     changed=$((changed+1))
   done
   ok "SOCKS5 server updated (skop dikekalkan) (changed=$changed skipped=$skipped)"
+  restart_xray_all
+}
+
+# --------- PRESET LOADER ---------
+load_preset_all() {
+  echo
+  echo -e "${GOLD}${BOLD}★ Muat PRESET domain${RESET} ${DIM}${GREY}(streaming, bank MY, Astro, RTMklik, CDN)${RESET}"
+  echo -e "${DIM}${GREY}Domain custom sedia ada yang TIADA dalam preset akan dikekalkan di bawah (CUSTOM).${RESET}"
+  read -rp "$(echo -e "  ${CYAN}➜ Teruskan? type YES:${RESET} ")" ans
+  [ "$ans" = "YES" ] || { info "Cancelled."; return 0; }
+
+  # baca preset -> arrays selari
+  local ptype=() pval=() line
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+    [ -z "${line//[[:space:]]/}" ] && continue
+    if [[ "$line" == \#* ]]; then
+      ptype+=("c"); pval+=("$line")
+    else
+      line="${line//[[:space:]]/}"
+      [[ "$line" != domain:* ]] && line="domain:$line"
+      ptype+=("d"); pval+=("$line")
+    fi
+  done < <(preset_domains_raw)
+
+  declare -A pset=()
+  local i
+  for i in "${!ptype[@]}"; do [ "${ptype[$i]}" = "d" ] && pset["${pval[$i]}"]=1; done
+
+  local changed=0 skipped=0 f d
+  for f in "${CFG_LIST[@]}"; do
+    [ -f "$f" ] || { skipped=$((skipped+1)); continue; }
+    backup "$f"
+
+    local cval=() has_custom=0
+    while IFS= read -r d; do
+      [ -n "$d" ] || continue
+      if [ -z "${pset[$d]+x}" ]; then has_custom=1; cval+=("$d"); fi
+    done < <(domains_list_file_raw "$f" || true)
+
+    local atype=() aval=()
+    for i in "${!ptype[@]}"; do atype+=("${ptype[$i]}"); aval+=("${pval[$i]}"); done
+    if [ "$has_custom" -eq 1 ]; then
+      atype+=("c"); aval+=("# ===== CUSTOM (KEKAL) =====")
+      for i in "${!cval[@]}"; do atype+=("d"); aval+=("${cval[$i]}"); done
+    fi
+
+    local last=-1
+    for i in "${!atype[@]}"; do [ "${atype[$i]}" = "d" ] && last=$i; done
+
+    local ind
+    ind="$(awk '/"domain"[ \t]*:[ \t]*\[/{match($0,/^[ \t]*/); print substr($0,RSTART,RLENGTH) "  "; exit}' "$f")"
+    [ -n "$ind" ] || ind="          "
+
+    local blk; blk="$(mktemp)"
+    for i in "${!atype[@]}"; do
+      if [ "${atype[$i]}" = "c" ]; then
+        printf '%s%s\n' "$ind" "${aval[$i]}" >> "$blk"
+      else
+        if [ "$i" -eq "$last" ]; then printf '%s"%s"\n'  "$ind" "${aval[$i]}" >> "$blk"
+        else                          printf '%s"%s",\n' "$ind" "${aval[$i]}" >> "$blk"; fi
+      fi
+    done
+
+    replace_domain_block_file "$f" "$blk"
+    rm -f "$blk"
+    changed=$((changed+1))
+  done
+
+  ok "Preset dimuat (changed=$changed skipped=$skipped)"
+  show_domains_all
   restart_xray_all
 }
 
@@ -683,9 +966,9 @@ restart_one_service() {
 }
 
 restart_xray_all() {
-  restart_one_service "config" || true   # config dulu
-  sleep 3                                 # jeda 3s ANTARA dua restart
-  restart_one_service "none" || true      # baru none
+  restart_one_service "config" || true
+  sleep 3
+  restart_one_service "none" || true
 }
 
 cleanup_backups_all() {
@@ -789,7 +1072,7 @@ print_header() {
   local bar="$1"
   hrh "$bar"
   echo -e "  ${BOLD}${WHITE}⚡ XRAY ROUTING ENGINE${RESET}"
-  echo -e "  ${DIM}${GREY}warp · freedom · socks5 · router${RESET}"
+  echo -e "  ${DIM}${GREY}warp · freedom · socks5${RESET}"
   hrh "$bar"
 }
 
@@ -835,6 +1118,7 @@ while true; do
 
   echo
   section "$BLUE" "DOMAIN"
+  echo -e "   ${GOLD}${BOLD}p${RESET}  🌟  ${WHITE}Load preset${RESET}   ${DIM}${GREY}streaming·bank·Astro·RTM·CDN${RESET}"
   echo -e "   ${GOLD}${BOLD}4${RESET}  ➕  ${WHITE}Add domain${RESET}     ${DIM}${GREY}multi${RESET}"
   echo -e "   ${GOLD}${BOLD}5${RESET}  ➖  ${WHITE}Delete domain${RESET}  ${DIM}${GREY}by no.${RESET}"
   echo -e "   ${GOLD}${BOLD}6${RESET}  🧹  ${WHITE}Flush domains${RESET}"
@@ -851,8 +1135,9 @@ while true; do
   hr "$PINK"
 
   echo
-  echo -e "  ${DIM}${GREY}❇ Full-tunnel auto: AsIs + DNS direct + block QUIC${RESET}"
-  echo -e "  ${DIM}${GREY}❇ Auto-restart config + none tiap perubahan${RESET}"
+  echo -e "  ${DIM}${GREY}❇ Ubah DNS ke 1.1.1.1 ketika guna mode warp(Recommended)${RESET}"
+  echo -e "  ${DIM}${GREY}❇ Maaf jika ada kekurangan. Sila report ke admin @NiLphreakz${RESET}"
+  echo -e "  ${DIM}${GREY}❇ This script was created by NiLphreakz with the help of AI${RESET}"
   echo
 
   read -rp "$(echo -e "  ${BAR}${BOLD}➜ Pilih:${RESET} ")" c
@@ -861,6 +1146,7 @@ while true; do
     1) do_warp ;;
     2) do_freedom ;;
     3) enable_socks5_mode ;;
+    p|P) load_preset_all ;;
     4) add_domain_all ;;
     5) delete_domain_global_number ;;
     6) flush_domains_all ;;
