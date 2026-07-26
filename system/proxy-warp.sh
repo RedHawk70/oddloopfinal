@@ -1,10 +1,16 @@
 #!/bin/bash
-# XRAY WARP / FREEDOM / SOCKS5 MENU  (full-fix, auto-restart, UI responsive)
+# XRAY WARP / FREEDOM / SOCKS5 MENU  (full-fix + auto DNS/QUIC untuk full-tunnel)
 # - TARGET JSON LIST ONLY (no jq), KEEP #COMMENTS
 # - Domain list managed from FIRST rule that contains: "domain": [ ... ]
 # - MODE switch (warp/direct/socks5) only changes that rule's outboundTag
+# - SKOP: setiap tukar WARP/SOCKS5 boleh pilih -> (1) domain list sahaja / (2) SEMUA trafik
+#         skop dikawal oleh outbound PERTAMA: direct=list sahaja, warp/socks5=semua trafik
+# - AUTO DNS/QUIC FIX (bila SEMUA trafik / full-tunnel):
+#     * routing "domainStrategy" -> "AsIs"  (biar WARP resolve remote atas TCP, socks5h)
+#     * sisip rule: DNS port 53 -> direct   (elak UDP DNS mati kat WARP SOCKS5 TCP-only)
+#     * sisip rule: QUIC udp 443 -> blocked (paksa fallback TCP; YouTube dll jalan)
+#   Bila balik list-sahaja/Freedom -> domainStrategy "IPIfNonMatch" + buang rule helper tu
 # - Marker comment auto-follows mode (WARP / FREEDOM / SOCKS5), letak atas "domain": [
-# - SELF-HEAL: 'direct' (freedom) sentiasa jadi outbound PERTAMA (default)
 # - SOCKS5 mode: auto-insert outbound "tag":"socks5" kalau belum ada
 # - Status SOCKS rujuk WARP local (127.0.0.1:40000) sahaja
 # - AUTO-RESTART: config dulu -> sleep 3 -> none  (reset-failed + config test + verify aktif)
@@ -61,7 +67,7 @@ get_global_socks() {
   if is_listening "$WARP_ADDR" "$WARP_PORT"; then echo "$WARP_PORT"; else echo "OFF"; fi
 }
 
-# --------- MODE detect ---------
+# --------- MODE detect (dari domain rule) ---------
 get_mode_file() {
   local f="$1"
   awk '
@@ -93,6 +99,43 @@ get_global_mode() {
   elif [ "$d" -eq 1 ] && [ "$w" -eq 0 ] && [ "$s" -eq 0 ] && [ "$u" -eq 0 ]; then echo "direct"
   elif [ "$s" -eq 1 ] && [ "$w" -eq 0 ] && [ "$d" -eq 0 ] && [ "$u" -eq 0 ]; then echo "socks5"
   else echo "mixed"; fi
+}
+
+# --------- SCOPE detect (dari outbound PERTAMA) ---------
+get_first_outbound_file() {
+  local f="$1"
+  awk '
+    BEGIN{inOut=0; done=0}
+    {
+      if(done) next
+      if(inOut==0){ if($0 ~ /"outbounds"[ \t]*:[ \t]*\[/) inOut=1; next }
+      if($0 ~ /"tag"[ \t]*:[ \t]*"[^"]*"/){
+        t=$0; gsub(/.*"tag"[ \t]*:[ \t]*"/,"",t); gsub(/".*/,"",t); print t; done=1
+      }
+    }
+  ' "$f" 2>/dev/null || true
+}
+
+# "list" jika default outbound = direct, selainnya "all" (full tunnel)
+get_global_scope() {
+  local f first
+  for f in "${CFG_LIST[@]}"; do
+    [ -f "$f" ] || continue
+    first="$(get_first_outbound_file "$f")"
+    if [ "$first" = "direct" ] || [ -z "$first" ]; then echo "list"; else echo "all"; fi
+    return
+  done
+  echo "list"
+}
+
+# Adakah patch full-tunnel (DNS/QUIC helper) sudah dipasang?
+get_fulltunnel_applied() {
+  local f
+  for f in "${CFG_LIST[@]}"; do
+    [ -f "$f" ] || continue
+    grep -q 'XRAYMENU-FULLTUNNEL' "$f" && { echo "yes"; return; }
+  done
+  echo "no"
 }
 
 # --------- DOMAIN helpers ---------
@@ -199,7 +242,6 @@ marker_text_for_mode() {
   esac
 }
 
-# Buang semua marker DOMAIN sedia ada, letak satu marker ikut mode tepat atas "domain": [
 set_marker_file() {
   local f="$1" mode="$2" mark
   mark="$(marker_text_for_mode "$mode")"
@@ -216,10 +258,10 @@ set_marker_file() {
   ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 }
 
-# --------- OUTBOUND ORDER (self-heal: 'direct' mesti pertama) ---------
-ensure_direct_first_file() {
-  local f="$1"
-  awk '
+# --------- OUTBOUND ORDER (letak tag tertentu jadi PERTAMA = default outbound) ---------
+ensure_first_outbound_file() {
+  local f="$1" want="$2"
+  awk -v WANT="$want" '
     BEGIN{inOut=0; collecting=0; nobj=0; depth=0}
     {
       if(inOut==0){
@@ -230,7 +272,7 @@ ensure_direct_first_file() {
       if(collecting==1){
         if(depth==0 && $0 ~ /^[ \t]*\][ \t]*,?[ \t]*$/){
           di=0
-          for(i=1;i<=nobj;i++){ if(tag[i]=="direct"){ di=i; break } }
+          for(i=1;i<=nobj;i++){ if(tag[i]==WANT){ di=i; break } }
           on=0
           if(di>0){ order[++on]=di }
           for(i=1;i<=nobj;i++){ if(i!=di){ order[++on]=i } }
@@ -257,6 +299,67 @@ ensure_direct_first_file() {
   ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 }
 
+ensure_direct_first_file() { ensure_first_outbound_file "$1" "direct"; }
+
+# --------- DNS/QUIC full-tunnel helpers ---------
+# Tukar routing "domainStrategy" (scoped dalam block "routing" sahaja; TAK sentuh outbound domainStrategy)
+set_domain_strategy_file() {
+  local f="$1" strat="$2"
+  awk -v STRAT="$strat" '
+    BEGIN{inR=0; done=0}
+    {
+      line=$0
+      if(inR==0 && line ~ /"routing"[ \t]*:[ \t]*\{/){ inR=1 }
+      if(inR==1 && done==0 && line ~ /"domainStrategy"[ \t]*:/){
+        sub(/"domainStrategy"[ \t]*:[ \t]*"[^"]*"/, "\"domainStrategy\": \"" STRAT "\"", line); done=1
+      }
+      print line
+    }
+  ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+
+# Buang rule helper full-tunnel (marker + signature DNS/QUIC, single-line)
+remove_fulltunnel_rules_file() {
+  local f="$1"
+  awk '
+    /#[ \t]*XRAYMENU-FULLTUNNEL/ { next }
+    /"type"[ \t]*:[ \t]*"field".*"port"[ \t]*:[ \t]*53[ ,].*"outboundTag"[ \t]*:[ \t]*"direct"/ { next }
+    /"type"[ \t]*:[ \t]*"field".*"network"[ \t]*:[ \t]*"udp".*"port"[ \t]*:[ \t]*443.*"outboundTag"[ \t]*:[ \t]*"blocked"/ { next }
+    { print }
+  ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+
+# Tambah rule helper full-tunnel di ATAS array "rules" (buang dulu supaya tak duplicate)
+add_fulltunnel_rules_file() {
+  local f="$1"
+  remove_fulltunnel_rules_file "$f"
+  awk '
+    BEGIN{done=0}
+    {
+      print $0
+      if(done==0 && $0 ~ /"rules"[ \t]*:[ \t]*\[/){
+        match($0, /^[ \t]*/); ind=substr($0,RSTART,RLENGTH) "  "
+        print ind "# XRAYMENU-FULLTUNNEL (auto: DNS direct + block QUIC)"
+        print ind "{ \"type\": \"field\", \"port\": 53, \"outboundTag\": \"direct\" },"
+        print ind "{ \"type\": \"field\", \"network\": \"udp\", \"port\": 443, \"outboundTag\": \"blocked\" },"
+        done=1
+      }
+    }
+  ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+
+# Terap tweak DNS/QUIC ikut skop
+apply_dns_tweak_file() {
+  local f="$1" scope="$2"
+  if [ "$scope" = "all" ]; then
+    set_domain_strategy_file "$f" "AsIs"
+    add_fulltunnel_rules_file "$f"
+  else
+    set_domain_strategy_file "$f" "IPIfNonMatch"
+    remove_fulltunnel_rules_file "$f"
+  fi
+}
+
 # --------- SOCKS5 outbound auto-manage ---------
 socks5_outbound_exists_file() { grep -Eq '"tag"[[:space:]]*:[[:space:]]*"socks5"' "$1"; }
 
@@ -271,7 +374,6 @@ prompt_socks5_details() {
   [[ "$SOCKS5_PORT" =~ ^[0-9]+$ ]] || die "Port mesti nombor."
 }
 
-# Insert AFTER the first outbound object (order dikemas semula oleh ensure_direct_first_file)
 insert_socks5_outbound_file() {
   local f="$1" blk
   blk="$(mktemp)"
@@ -354,7 +456,7 @@ update_socks5_outbound_file() {
   ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 }
 
-# --------- MODE actions ---------
+# --------- MODE core ---------
 set_mode_file() {
   local f="$1" mode="$2"
   awk -v MODE="$mode" '
@@ -373,18 +475,51 @@ set_mode_file() {
   ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 }
 
-set_mode_all() {
-  local mode="$1" changed=0 skipped=0 f
+# --------- SCOPE prompt (echoes hanya "list" / "all" ke stdout) ---------
+prompt_scope() {
+  local title="$1" a
+  {
+    echo -e ""
+    echo -e "${YELLOW}${BOLD}Pilih skop untuk mode ${title}:${RESET}"
+    echo -e "   ${GREEN}${BOLD}1${RESET}) Hanya ${WHITE}DOMAIN LIST${RESET} lalu ${title}   ${DIM}${GREY}(lain-lain DIRECT)${RESET}"
+    echo -e "   ${RED}${BOLD}2${RESET}) ${WHITE}SEMUA trafik${RESET} lalu ${title}         ${DIM}${GREY}(full tunnel + auto DNS/QUIC fix)${RESET}"
+  } >&2
+  read -rp "$(echo -e "  ${CYAN}➜ Skop [1/2] (default 1):${RESET} ")" a
+  case "$a" in
+    2) echo "all" ;;
+    *) echo "list" ;;
+  esac
+}
+
+# Terap mode + skop (+ DNS/QUIC tweak) pada semua fail
+apply_mode_all() {
+  local mode="$1" scope="$2" changed=0 skipped=0 f firsttag
+  if [ "$scope" = "all" ]; then firsttag="$mode"; else firsttag="direct"; fi
   for f in "${CFG_LIST[@]}"; do
     [ -f "$f" ] || { skipped=$((skipped+1)); continue; }
     backup "$f"
     set_mode_file "$f" "$mode"
     set_marker_file "$f" "$mode"
-    ensure_direct_first_file "$f"
+    ensure_first_outbound_file "$f" "$firsttag"
+    apply_dns_tweak_file "$f" "$scope"
     changed=$((changed+1))
   done
-  ok "Mode updated: $mode (changed=$changed, skipped=$skipped)"
+  if [ "$scope" = "all" ]; then
+    ok "Mode: ${mode} | Skop: SEMUA trafik (full tunnel) + DNS/QUIC fix  changed=$changed skipped=$skipped"
+  else
+    ok "Mode: ${mode} | Skop: domain list sahaja (lain-lain DIRECT)  changed=$changed skipped=$skipped"
+  fi
   restart_xray_all
+}
+
+do_warp() {
+  local scope; scope="$(prompt_scope "WARP")"
+  apply_mode_all "warp" "$scope"
+}
+
+do_freedom() {
+  # Freedom = semua DIRECT (skop list, IPIfNonMatch, tiada helper)
+  apply_mode_all "direct" "list"
 }
 
 enable_socks5_mode() {
@@ -397,6 +532,8 @@ enable_socks5_mode() {
     info "Outbound 'socks5' belum wujud dalam sebahagian config — sila isi."
     prompt_socks5_details
   fi
+  local scope; scope="$(prompt_scope "SOCKS5")"
+  local firsttag; if [ "$scope" = "all" ]; then firsttag="socks5"; else firsttag="direct"; fi
   local changed=0 skipped=0
   for f in "${CFG_LIST[@]}"; do
     [ -f "$f" ] || { skipped=$((skipped+1)); continue; }
@@ -404,25 +541,31 @@ enable_socks5_mode() {
     socks5_outbound_exists_file "$f" || insert_socks5_outbound_file "$f"
     set_marker_file "$f" "socks5"
     set_mode_file "$f" "socks5"
-    ensure_direct_first_file "$f"
+    ensure_first_outbound_file "$f" "$firsttag"
+    apply_dns_tweak_file "$f" "$scope"
     changed=$((changed+1))
   done
-  ok "SOCKS5 enabled (default kekal 'direct'; hanya domain list -> socks5) changed=$changed skipped=$skipped"
+  if [ "$scope" = "all" ]; then
+    ok "SOCKS5 | Skop: SEMUA trafik (full tunnel) + DNS/QUIC fix  changed=$changed skipped=$skipped"
+  else
+    ok "SOCKS5 | Skop: domain list sahaja (lain-lain DIRECT)  changed=$changed skipped=$skipped"
+  fi
   restart_xray_all
 }
 
 edit_socks5_server() {
   prompt_socks5_details
-  local changed=0 skipped=0 f
+  local changed=0 skipped=0 f keep
   for f in "${CFG_LIST[@]}"; do
     [ -f "$f" ] || { skipped=$((skipped+1)); continue; }
+    keep="$(get_first_outbound_file "$f")"; [ -n "$keep" ] || keep="direct"
     backup "$f"
     if socks5_outbound_exists_file "$f"; then update_socks5_outbound_file "$f"
     else insert_socks5_outbound_file "$f"; fi
-    ensure_direct_first_file "$f"
+    ensure_first_outbound_file "$f" "$keep"   # kekalkan skop semasa
     changed=$((changed+1))
   done
-  ok "SOCKS5 server updated (changed=$changed skipped=$skipped)"
+  ok "SOCKS5 server updated (skop dikekalkan) (changed=$changed skipped=$skipped)"
   restart_xray_all
 }
 
@@ -513,13 +656,8 @@ restart_one_service() {
     return 1
   fi
   local cfg="$XRAY_DIR/${svc}.json"
-
   info "Restarting xray@${svc}..."
-
-  # kosongkan status 'failed'/rate-limit yang mungkin blok restart
   systemctl reset-failed "xray@${svc}" 2>/dev/null || true
-
-  # test config dulu — kalau tak valid, jangan restart
   if command -v xray >/dev/null 2>&1 && [ -f "$cfg" ]; then
     if ! xray -test -config "$cfg" >"/tmp/xray_test_${svc}.log" 2>&1; then
       echo -e "${RED}[FAIL]${RESET} config xray@${svc} TAK VALID — restart dibatalkan:"
@@ -527,8 +665,6 @@ restart_one_service() {
       return 1
     fi
   fi
-
-  # restart TANPA sorok error, dan SAHKAN ia benar-benar aktif
   if systemctl restart "xray@${svc}"; then
     sleep 1
     if systemctl is-active --quiet "xray@${svc}"; then
@@ -614,7 +750,6 @@ import_domains_file_all() {
 # ---------- UI HELPERS ----------
 repeat() { local n="$1" s="$2" out=""; while [ "$n" -gt 0 ]; do out="$out$s"; n=$((n-1)); done; printf '%s' "$out"; }
 
-# Lebar auto ikut terminal (PC lebar / telefon sempit), had 30..54
 ui_width() {
   local c
   c="$(tput cols 2>/dev/null)"
@@ -626,8 +761,8 @@ ui_width() {
   printf '%s' "$w"
 }
 
-hr()  { echo -e "${1}$(repeat "$UIW" '─')${RESET}"; }   # garis nipis
-hrh() { echo -e "${1}$(repeat "$UIW" '━')${RESET}"; }   # garis tebal
+hr()  { echo -e "${1}$(repeat "$UIW" '─')${RESET}"; }
+hrh() { echo -e "${1}$(repeat "$UIW" '━')${RESET}"; }
 
 mode_badge() {
   case "$1" in
@@ -641,6 +776,11 @@ mode_badge() {
 socks_badge() {
   if [ "$1" = "OFF" ]; then echo -e "${RED}${BOLD}⭘ OFF${RESET}"
   else echo -e "${LIME}${BOLD}⬤ ${1}${RESET}"; fi
+}
+
+scope_badge() {
+  if [ "$1" = "all" ]; then echo -e "${RED}${BOLD}🌐 SEMUA trafik${RESET}"
+  else echo -e "${LIME}${BOLD}🎯 List sahaja${RESET}"; fi
 }
 
 section() { echo -e "  ${1}▍ ${BOLD}${WHITE}${2}${RESET}"; }
@@ -661,6 +801,7 @@ while true; do
   UIW="$(ui_width)"
   gm="$(get_global_mode)"
   sk="$(get_global_socks)"
+  sc="$(get_global_scope)"
   case "$gm" in
     warp) BAR="$GREEN" ;; direct) BAR="$ORANGE" ;; socks5) BAR="$CYAN" ;; *) BAR="$YELLOW" ;;
   esac
@@ -670,15 +811,26 @@ while true; do
   echo
   section "$VIOLET" "STATUS"
   echo -e "   ${GREY}Mode :${RESET} $(mode_badge "$gm")"
+  if [ "$gm" = "warp" ] || [ "$gm" = "socks5" ]; then
+    echo -e "   ${GREY}Scope:${RESET} $(scope_badge "$sc")"
+    if [ "$sc" = "all" ]; then
+      ft="$(get_fulltunnel_applied)"
+      if [ "$ft" = "yes" ]; then
+        echo -e "   ${GREY}DNSfx:${RESET} ${GREEN}${BOLD}✓ AsIs · DNS direct · block QUIC${RESET}"
+      else
+        echo -e "   ${GREY}DNSfx:${RESET} ${RED}${BOLD}✗ belum patch${RESET}"
+      fi
+    fi
+  fi
   echo -e "   ${GREY}Socks:${RESET} $(socks_badge "$sk")  ${DIM}${GREY}(${WARP_ADDR}:${WARP_PORT})${RESET}"
   echo -e "   ${GREY}Files:${RESET} ${PINK}${BOLD}${#CFG_LIST[@]}${RESET} ${GREY}config${RESET}"
   hr "$VIOLET"
 
   echo
   section "$TEAL" "MODE"
-  echo -e "   ${GREEN}${BOLD}1${RESET}  🛡  ${WHITE}Enable WARP${RESET}   ${DIM}${GREY}→ warp${RESET}"
-  echo -e "   ${ORANGE}${BOLD}2${RESET}  🚀  ${WHITE}Set FREEDOM${RESET}   ${DIM}${GREY}→ direct${RESET}"
-  echo -e "   ${CYAN}${BOLD}3${RESET}  🧦  ${WHITE}Set SOCKS5${RESET}    ${DIM}${GREY}→ socks5${RESET}"
+  echo -e "   ${GREEN}${BOLD}1${RESET}  🛡  ${WHITE}Enable WARP${RESET}   ${DIM}${GREY}→ pilih skop${RESET}"
+  echo -e "   ${ORANGE}${BOLD}2${RESET}  🚀  ${WHITE}Set FREEDOM${RESET}   ${DIM}${GREY}→ semua direct${RESET}"
+  echo -e "   ${CYAN}${BOLD}3${RESET}  🧦  ${WHITE}Set SOCKS5${RESET}    ${DIM}${GREY}→ pilih skop${RESET}"
   hr "$TEAL"
 
   echo
@@ -699,15 +851,15 @@ while true; do
   hr "$PINK"
 
   echo
-  echo -e "  ${DIM}${GREY}❇ Lain-lain = DIRECT · hanya list lalu warp/socks5${RESET}"
+  echo -e "  ${DIM}${GREY}❇ Full-tunnel auto: AsIs + DNS direct + block QUIC${RESET}"
   echo -e "  ${DIM}${GREY}❇ Auto-restart config + none tiap perubahan${RESET}"
   echo
 
   read -rp "$(echo -e "  ${BAR}${BOLD}➜ Pilih:${RESET} ")" c
   echo
   case "$c" in
-    1) set_mode_all "warp" ;;
-    2) set_mode_all "direct" ;;
+    1) do_warp ;;
+    2) do_freedom ;;
     3) enable_socks5_mode ;;
     4) add_domain_all ;;
     5) delete_domain_global_number ;;
