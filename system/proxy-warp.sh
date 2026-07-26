@@ -1,5 +1,5 @@
 #!/bin/bash
-# XRAY WARP / FREEDOM / SOCKS5 MENU  (full-fix, auto-restart)
+# XRAY WARP / FREEDOM / SOCKS5 MENU  (full-fix, auto-restart, UI responsive)
 # - TARGET JSON LIST ONLY (no jq), KEEP #COMMENTS
 # - Domain list managed from FIRST rule that contains: "domain": [ ... ]
 # - MODE switch (warp/direct/socks5) only changes that rule's outboundTag
@@ -7,8 +7,8 @@
 # - SELF-HEAL: 'direct' (freedom) sentiasa jadi outbound PERTAMA (default)
 # - SOCKS5 mode: auto-insert outbound "tag":"socks5" kalau belum ada
 # - Status SOCKS rujuk WARP local (127.0.0.1:40000) sahaja
-# - AUTO-RESTART xray@none + xray@config selepas setiap perubahan config
-# - Only domains in the list route via warp/socks5; everything else = direct
+# - AUTO-RESTART: config dulu -> sleep 3 -> none  (reset-failed + config test + verify aktif)
+# - UI auto-fit lebar terminal (PC / telefon), tiada border cacat
 # NOTA: routing domain perlukan "sniffing" enabled pada inbounds (uruskan di config, bukan script ni)
 set -euo pipefail
 
@@ -34,6 +34,9 @@ SOCKS5_PASS=""
 RESET="\e[0m"; BOLD="\e[1m"; DIM="\e[2m"; WHITE="\e[97m"
 GREEN="\e[92m"; YELLOW="\e[93m"; ORANGE="\e[38;5;208m"
 RED="\e[91m"; CYAN="\e[96m"; PINK="\e[38;5;213m"
+BLUE="\e[38;5;39m"; TEAL="\e[38;5;44m"; LIME="\e[38;5;154m"
+VIOLET="\e[38;5;141m"; GOLD="\e[38;5;220m"; GREY="\e[38;5;245m"
+BGDARK="\e[48;5;236m"
 
 die(){ echo -e "\n${RED}[ERROR]${RESET} $*\n"; exit 1; }
 ok(){  echo -e "${GREEN}[OK]${RESET} $*"; }
@@ -90,19 +93,6 @@ get_global_mode() {
   elif [ "$d" -eq 1 ] && [ "$w" -eq 0 ] && [ "$s" -eq 0 ] && [ "$u" -eq 0 ]; then echo "direct"
   elif [ "$s" -eq 1 ] && [ "$w" -eq 0 ] && [ "$d" -eq 0 ] && [ "$u" -eq 0 ]; then echo "socks5"
   else echo "mixed"; fi
-}
-
-status_line() {
-  local mode socks color label scol
-  mode="$(get_global_mode)"; socks="$(get_global_socks)"
-  case "$mode" in
-    warp)   color="$GREEN";  label="WARP" ;;
-    direct) color="$ORANGE"; label="DIRECT" ;;
-    socks5) color="$CYAN";   label="SOCKS5" ;;
-    *)      color="$YELLOW"; label="MIXED/UNKNOWN" ;;
-  esac
-  scol="$CYAN"; [ "$socks" = "OFF" ] && scol="$RED"
-  echo -e "${color}${BOLD}MODE:${RESET} ${color}${label}${RESET}  | ${BOLD}SOCKS:${RESET} ${scol}${socks}${RESET}"
 }
 
 # --------- DOMAIN helpers ---------
@@ -515,10 +505,51 @@ flush_domains_all() {
   restart_xray_all
 }
 
+# ========= AUTO-RESTART (hardened) =========
+restart_one_service() {
+  local svc="${1:-}"
+  if [ -z "$svc" ]; then
+    echo -e "${RED}[FAIL]${RESET} restart_one_service dipanggil tanpa nama servis"
+    return 1
+  fi
+  local cfg="$XRAY_DIR/${svc}.json"
+
+  info "Restarting xray@${svc}..."
+
+  # kosongkan status 'failed'/rate-limit yang mungkin blok restart
+  systemctl reset-failed "xray@${svc}" 2>/dev/null || true
+
+  # test config dulu — kalau tak valid, jangan restart
+  if command -v xray >/dev/null 2>&1 && [ -f "$cfg" ]; then
+    if ! xray -test -config "$cfg" >"/tmp/xray_test_${svc}.log" 2>&1; then
+      echo -e "${RED}[FAIL]${RESET} config xray@${svc} TAK VALID — restart dibatalkan:"
+      tail -n 15 "/tmp/xray_test_${svc}.log"
+      return 1
+    fi
+  fi
+
+  # restart TANPA sorok error, dan SAHKAN ia benar-benar aktif
+  if systemctl restart "xray@${svc}"; then
+    sleep 1
+    if systemctl is-active --quiet "xray@${svc}"; then
+      ok "xray@${svc} aktif ✓"
+    else
+      echo -e "${RED}[FAIL]${RESET} xray@${svc} tak aktif selepas restart:"
+      journalctl -u "xray@${svc}" -n 15 --no-pager 2>/dev/null || true
+      return 1
+    fi
+  else
+    echo -e "${RED}[FAIL]${RESET} systemctl restart xray@${svc} gagal (kemungkinan rate-limit):"
+    systemctl status "xray@${svc}" --no-pager -l 2>/dev/null | tail -n 15 || true
+    return 1
+  fi
+  return 0
+}
+
 restart_xray_all() {
-  systemctl restart xray@none 2>/dev/null || true
-  systemctl restart xray@config 2>/dev/null || true
-  ok "Restarted all target services (xray@none + xray@config)"
+  restart_one_service "config" || true   # config dulu
+  sleep 3                                 # jeda 3s ANTARA dua restart
+  restart_one_service "none" || true      # baru none
 }
 
 cleanup_backups_all() {
@@ -580,41 +611,100 @@ import_domains_file_all() {
   restart_xray_all
 }
 
+# ---------- UI HELPERS ----------
+repeat() { local n="$1" s="$2" out=""; while [ "$n" -gt 0 ]; do out="$out$s"; n=$((n-1)); done; printf '%s' "$out"; }
+
+# Lebar auto ikut terminal (PC lebar / telefon sempit), had 30..54
+ui_width() {
+  local c
+  c="$(tput cols 2>/dev/null)"
+  case "$c" in ''|*[!0-9]*) c="${COLUMNS:-48}" ;; esac
+  case "$c" in ''|*[!0-9]*) c=48 ;; esac
+  local w=$((c-2))
+  [ "$w" -gt 54 ] && w=54
+  [ "$w" -lt 30 ] && w=30
+  printf '%s' "$w"
+}
+
+hr()  { echo -e "${1}$(repeat "$UIW" '─')${RESET}"; }   # garis nipis
+hrh() { echo -e "${1}$(repeat "$UIW" '━')${RESET}"; }   # garis tebal
+
+mode_badge() {
+  case "$1" in
+    warp)   echo -e "${GREEN}${BOLD}🛡  WARP${RESET}" ;;
+    direct) echo -e "${ORANGE}${BOLD}🚀 FREEDOM${RESET}" ;;
+    socks5) echo -e "${CYAN}${BOLD}🧦 SOCKS5${RESET}" ;;
+    *)      echo -e "${YELLOW}${BOLD}❔ MIXED${RESET}" ;;
+  esac
+}
+
+socks_badge() {
+  if [ "$1" = "OFF" ]; then echo -e "${RED}${BOLD}⭘ OFF${RESET}"
+  else echo -e "${LIME}${BOLD}⬤ ${1}${RESET}"; fi
+}
+
+section() { echo -e "  ${1}▍ ${BOLD}${WHITE}${2}${RESET}"; }
+
+print_header() {
+  local bar="$1"
+  hrh "$bar"
+  echo -e "  ${BOLD}${WHITE}⚡ XRAY ROUTING ENGINE${RESET}"
+  echo -e "  ${DIM}${GREY}warp · freedom · socks5 · router${RESET}"
+  hrh "$bar"
+}
+
 # ---------- MAIN ----------
 need_targets
 
 while true; do
   clear
+  UIW="$(ui_width)"
   gm="$(get_global_mode)"
+  sk="$(get_global_socks)"
   case "$gm" in
     warp) BAR="$GREEN" ;; direct) BAR="$ORANGE" ;; socks5) BAR="$CYAN" ;; *) BAR="$YELLOW" ;;
   esac
 
-  echo -e "${BAR}======================================${RESET}"
-  echo -e "${WHITE}${BOLD}XRAY WARP / FREEDOM / SOCKS5 MENU${RESET}"
-  echo -e "${BAR}======================================${RESET}"
-  echo -e " ${WHITE}Targets :${RESET} ${PINK}${#CFG_LIST[@]} config(s)${RESET}"
-  echo -e " ${WHITE}Status  :${RESET} $(status_line)"
-  echo -e "${BAR}--------------------------------------${RESET}"
-  echo -e " ${PINK}1)${RESET} Enable WARP    (domain list -> warp)"
-  echo -e " ${PINK}2)${RESET} Set FREEDOM    (domain list -> direct)"
-  echo -e " ${PINK}3)${RESET} Set SOCKS5     (domain list -> socks5, auto setup)"
-  echo -e " ${PINK}4)${RESET} Add domain (yang nak lalu warp/socks5) [MULTI]"
-  echo -e " ${PINK}5)${RESET} Delete domain (by number)"
-  echo -e " ${PINK}6)${RESET} Flush domains (keep placeholder)"
-  echo -e " ${PINK}7)${RESET} Show domains (GLOBAL list)"
-  echo -e " ${PINK}8)${RESET} Restart XRAY (target services)"
-  echo -e " ${PINK}9)${RESET} Cleanup backup files (*.bak.*)"
-  echo -e " ${PINK}e)${RESET} Edit SOCKS5 server (address/port/user/pass)"
-  echo -e " ${PINK}i)${RESET} Import domains from file"
-  echo -e ""
-  echo -e " ${PINK}0)${RESET} Back to menu"
-  echo -e "${BAR}--------------------------------------${RESET}"
-  echo -e " ${YELLOW}❇️  Default trafik lain kekal DIRECT. Hanya domain dalam list lalu warp/socks5.${RESET}"
-  echo -e " ${YELLOW}❇️  Auto-restart xray@none + xray@config selepas setiap perubahan.${RESET}"
+  print_header "$BAR"
+
+  echo
+  section "$VIOLET" "STATUS"
+  echo -e "   ${GREY}Mode :${RESET} $(mode_badge "$gm")"
+  echo -e "   ${GREY}Socks:${RESET} $(socks_badge "$sk")  ${DIM}${GREY}(${WARP_ADDR}:${WARP_PORT})${RESET}"
+  echo -e "   ${GREY}Files:${RESET} ${PINK}${BOLD}${#CFG_LIST[@]}${RESET} ${GREY}config${RESET}"
+  hr "$VIOLET"
+
+  echo
+  section "$TEAL" "MODE"
+  echo -e "   ${GREEN}${BOLD}1${RESET}  🛡  ${WHITE}Enable WARP${RESET}   ${DIM}${GREY}→ warp${RESET}"
+  echo -e "   ${ORANGE}${BOLD}2${RESET}  🚀  ${WHITE}Set FREEDOM${RESET}   ${DIM}${GREY}→ direct${RESET}"
+  echo -e "   ${CYAN}${BOLD}3${RESET}  🧦  ${WHITE}Set SOCKS5${RESET}    ${DIM}${GREY}→ socks5${RESET}"
+  hr "$TEAL"
+
+  echo
+  section "$BLUE" "DOMAIN"
+  echo -e "   ${GOLD}${BOLD}4${RESET}  ➕  ${WHITE}Add domain${RESET}     ${DIM}${GREY}multi${RESET}"
+  echo -e "   ${GOLD}${BOLD}5${RESET}  ➖  ${WHITE}Delete domain${RESET}  ${DIM}${GREY}by no.${RESET}"
+  echo -e "   ${GOLD}${BOLD}6${RESET}  🧹  ${WHITE}Flush domains${RESET}"
+  echo -e "   ${GOLD}${BOLD}7${RESET}  📋  ${WHITE}Show domains${RESET}"
+  echo -e "   ${GOLD}${BOLD}i${RESET}  📥  ${WHITE}Import domains${RESET}"
+  hr "$BLUE"
+
+  echo
+  section "$PINK" "SYSTEM"
+  echo -e "   ${VIOLET}${BOLD}e${RESET}  ⚙️   ${WHITE}Edit SOCKS5 server${RESET}"
+  echo -e "   ${VIOLET}${BOLD}8${RESET}  🔁  ${WHITE}Restart XRAY${RESET}"
+  echo -e "   ${VIOLET}${BOLD}9${RESET}  🗑️   ${WHITE}Cleanup backups${RESET}"
+  echo -e "   ${RED}${BOLD}0${RESET}  ↩️   ${WHITE}Back to menu${RESET}"
+  hr "$PINK"
+
+  echo
+  echo -e "  ${DIM}${GREY}❇ Lain-lain = DIRECT · hanya list lalu warp/socks5${RESET}"
+  echo -e "  ${DIM}${GREY}❇ Auto-restart config + none tiap perubahan${RESET}"
   echo
 
-  read -rp "Select: " c
+  read -rp "$(echo -e "  ${BAR}${BOLD}➜ Pilih:${RESET} ")" c
+  echo
   case "$c" in
     1) set_mode_all "warp" ;;
     2) set_mode_all "direct" ;;
@@ -622,7 +712,7 @@ while true; do
     4) add_domain_all ;;
     5) delete_domain_global_number ;;
     6) flush_domains_all ;;
-    7) show_domains_global; read -rp "Press Enter..." ;;
+    7) show_domains_global; read -rp "  Enter..." ;;
     8) restart_xray_all ;;
     9) cleanup_backups_all ;;
     e|E) edit_socks5_server ;;
@@ -630,5 +720,5 @@ while true; do
     0) exec menu ;;
     *) info "Invalid option"; sleep 1 ;;
   esac
-  read -rp "Press Enter to continue..."
+  read -rp "$(echo -e "  ${DIM}${GREY}Enter untuk sambung...${RESET}")"
 done
