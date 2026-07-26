@@ -1,5 +1,5 @@
 #!/bin/bash
-# XRAY WARP / FREEDOM / SOCKS5 MENU  (full-fix, kemas)
+# XRAY WARP / FREEDOM / SOCKS5 MENU  (full-fix, auto-restart)
 # - TARGET JSON LIST ONLY (no jq), KEEP #COMMENTS
 # - Domain list managed from FIRST rule that contains: "domain": [ ... ]
 # - MODE switch (warp/direct/socks5) only changes that rule's outboundTag
@@ -7,6 +7,7 @@
 # - SELF-HEAL: 'direct' (freedom) sentiasa jadi outbound PERTAMA (default)
 # - SOCKS5 mode: auto-insert outbound "tag":"socks5" kalau belum ada
 # - Status SOCKS rujuk WARP local (127.0.0.1:40000) sahaja
+# - AUTO-RESTART xray@none + xray@config selepas setiap perubahan config
 # - Only domains in the list route via warp/socks5; everything else = direct
 # NOTA: routing domain perlukan "sniffing" enabled pada inbounds (uruskan di config, bukan script ni)
 set -euo pipefail
@@ -393,6 +394,7 @@ set_mode_all() {
     changed=$((changed+1))
   done
   ok "Mode updated: $mode (changed=$changed, skipped=$skipped)"
+  restart_xray_all
 }
 
 enable_socks5_mode() {
@@ -416,9 +418,7 @@ enable_socks5_mode() {
     changed=$((changed+1))
   done
   ok "SOCKS5 enabled (default kekal 'direct'; hanya domain list -> socks5) changed=$changed skipped=$skipped"
-  echo
-  read -rp "Restart XRAY now? type YES: " ans
-  [ "$ans" = "YES" ] && restart_xray_all
+  restart_xray_all
 }
 
 edit_socks5_server() {
@@ -433,9 +433,7 @@ edit_socks5_server() {
     changed=$((changed+1))
   done
   ok "SOCKS5 server updated (changed=$changed skipped=$skipped)"
-  echo
-  read -rp "Restart XRAY now? type YES: " ans
-  [ "$ans" = "YES" ] && restart_xray_all
+  restart_xray_all
 }
 
 # --------- DOMAIN actions ---------
@@ -478,8 +476,7 @@ add_domain_all() {
   ok "Domain(s) added: $total_added (files=$changed_files, skipped=$skipped)"
   echo -e "${CYAN}Added:${RESET}"; for d in "${new_domains[@]}"; do echo "  - $d"; done
   show_domains_all
-  echo; read -rp "Restart XRAY now? type YES: " ans
-  [ "$ans" = "YES" ] && restart_xray_all
+  restart_xray_all
 }
 
 delete_domain_global_number() {
@@ -501,6 +498,7 @@ delete_domain_global_number() {
   done
   ok "Domain removed (ALL): $target (changed=$changed, skipped=$skipped)"
   show_domains_all
+  restart_xray_all
 }
 
 flush_domains_all() {
@@ -514,12 +512,13 @@ flush_domains_all() {
   done
   ok "Flush completed (placeholder kept) (changed=$donec, skipped=$skipped)"
   show_domains_all
+  restart_xray_all
 }
 
 restart_xray_all() {
-  systemctl restart xray@config 2>/dev/null || true
   systemctl restart xray@none 2>/dev/null || true
-  ok "Restarted all target services"
+  systemctl restart xray@config 2>/dev/null || true
+  ok "Restarted all target services (xray@none + xray@config)"
 }
 
 cleanup_backups_all() {
@@ -578,8 +577,7 @@ import_domains_file_all() {
   if [ "$total_added" -eq 0 ]; then info "Semua domain dalam file dah wujud."; return 0; fi
   ok "Imported: $total_added domain(s) dari $file (files=$changed_files, skipped=$skipped)"
   show_domains_all
-  echo; read -rp "Restart XRAY now? type YES: " ans
-  [ "$ans" = "YES" ] && restart_xray_all
+  restart_xray_all
 }
 
 # ---------- MAIN ----------
@@ -613,7 +611,7 @@ while true; do
   echo -e " ${PINK}0)${RESET} Back to menu"
   echo -e "${BAR}--------------------------------------${RESET}"
   echo -e " ${YELLOW}❇️  Default trafik lain kekal DIRECT. Hanya domain dalam list lalu warp/socks5.${RESET}"
-  echo -e " ${YELLOW}❇️  Marker auto ikut mode & duduk atas senarai domain.${RESET}"
+  echo -e " ${YELLOW}❇️  Auto-restart xray@none + xray@config selepas setiap perubahan.${RESET}"
   echo
 
   read -rp "Select: " c
