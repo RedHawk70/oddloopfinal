@@ -90,6 +90,11 @@ cat > /usr/local/etc/xray/config.json << END
     {
       "port": 443,
       "protocol": "vless",
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly": true
+      },
       "settings": {
         "clients": [
           {
@@ -148,6 +153,11 @@ cat > /usr/local/etc/xray/config.json << END
       "port": 1212,
       "listen": "127.0.0.1",
       "protocol": "vless",
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly": true
+      },
       "settings": {
         "clients": [
           {
@@ -171,6 +181,11 @@ cat > /usr/local/etc/xray/config.json << END
       "port": 1214,
       "listen": "127.0.0.1",
       "protocol": "vmess",
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly": true
+      },
       "settings": {
         "clients": [
           {
@@ -194,6 +209,11 @@ cat > /usr/local/etc/xray/config.json << END
       "port": 1215,
       "listen": "127.0.0.1",
       "protocol": "trojan",
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly": true
+      },
       "settings": {
         "clients": [
           {
@@ -216,6 +236,11 @@ cat > /usr/local/etc/xray/config.json << END
       "port": 1213,
       "listen": "127.0.0.1",
       "protocol": "vless",
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly": true
+      },
       "settings": {
         "clients": [
           {
@@ -239,6 +264,11 @@ cat > /usr/local/etc/xray/config.json << END
       "listen": "127.0.0.1",
       "port": 1216,
       "protocol": "vless",
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly": true
+      },
       "settings": {
         "clients": [
           {
@@ -395,6 +425,11 @@ cat > /usr/local/etc/xray/none.json << END
       "listen": "0.0.0.0",
       "port": 80,
       "protocol": "vless",
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly": true
+      },
       "settings": {
         "clients": [
           {
@@ -437,6 +472,11 @@ cat > /usr/local/etc/xray/none.json << END
       "listen": "127.0.0.1",
       "port": 1301,
       "protocol": "vless",
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly": true
+      },
       "settings": {
         "decryption": "none",
         "clients": [
@@ -459,6 +499,11 @@ cat > /usr/local/etc/xray/none.json << END
       "listen": "127.0.0.1",
       "port": 1302,
       "protocol": "vless",
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly": true
+      },
       "settings": {
         "decryption": "none",
         "clients": [
@@ -482,6 +527,11 @@ cat > /usr/local/etc/xray/none.json << END
       "listen": "127.0.0.1",
       "port": 1303,
       "protocol": "vmess",
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly": true
+      },
       "settings": {
         "clients": [
           {
@@ -504,6 +554,11 @@ cat > /usr/local/etc/xray/none.json << END
       "listen": "127.0.0.1",
       "port": 1304,
       "protocol": "trojan",
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly": true
+      },
       "settings": {
         "clients": [
           {
@@ -526,6 +581,11 @@ cat > /usr/local/etc/xray/none.json << END
       "listen": "127.0.0.1",
       "port": 1305,
       "protocol": "vless",
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly": true
+      },
       "settings": {
         "clients": [
           {
