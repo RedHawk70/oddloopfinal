@@ -1352,7 +1352,7 @@ while true; do
 
   echo
   section "$BLUE" "DOMAIN"
-  echo -e "   ${GOLD}${BOLD}p${RESET}  ${WHITE}Load preset${RESET}    ${DIM}${GREY}streaming/bank/Astro/RTM/CDN${RESET}"
+  echo -e "   ${GOLD}${BOLD}p${RESET}  ${WHITE}Load preset${RESET}    ${DIM}${GREY}streaming/bank/Astro/Ott/CDN${RESET}"
   echo -e "   ${GOLD}${BOLD}4${RESET}  ${WHITE}Add domain${RESET}     ${DIM}${GREY}multi${RESET}"
   echo -e "   ${GOLD}${BOLD}5${RESET}  ${WHITE}Delete domain${RESET}  ${DIM}${GREY}by no.${RESET}"
   echo -e "   ${RED}${BOLD}6${RESET}  ${WHITE}Flush domains${RESET}  ${DIM}${GREY}keep placeholder${RESET}"
