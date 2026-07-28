@@ -1355,10 +1355,10 @@ while true; do
   echo -e "   ${GOLD}${BOLD}p${RESET}  ${WHITE}Load preset${RESET}    ${DIM}${GREY}streaming/bank/Astro/Ott/CDN${RESET}"
   echo -e "   ${GOLD}${BOLD}4${RESET}  ${WHITE}Add domain${RESET}     ${DIM}${GREY}multi${RESET}"
   echo -e "   ${GOLD}${BOLD}5${RESET}  ${WHITE}Delete domain${RESET}  ${DIM}${GREY}by no.${RESET}"
-  echo -e "   ${RED}${BOLD}6${RESET}  ${WHITE}Flush domains${RESET}  ${DIM}${GREY}keep placeholder${RESET}"
+  echo -e "   ${RED}${BOLD}6${RESET}  ${WHITE}Flush domains${RESET}  ${DIM}${GREY}delete all domains${RESET}"
   echo -e "   ${WHITE}${BOLD}7${RESET}  ${WHITE}Show domains${RESET}   ${DIM}${GREY}per file${RESET}"
   echo -e "   ${VIOLET}${BOLD}i${RESET}  ${WHITE}Import file${RESET}    ${DIM}${GREY}txt list${RESET}"
-  echo -e "   ${RED}${BOLD}x${RESET}  ${WHITE}Exclude bypass${RESET} ${DIM}${GREY}sentiasa direct${RESET}"
+  echo -e "   ${RED}${BOLD}x${RESET}  ${WHITE}Exclude bypass${RESET} ${DIM}${GREY}exclude domain tertentu lalu warp/socks5${RESET}"
   hr "$BLUE"
 
   echo
