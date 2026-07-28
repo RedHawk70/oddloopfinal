@@ -1069,7 +1069,7 @@ edit_socks5_server() {
 
 load_preset_all() {
   echo
-  echo -e "${GOLD}${BOLD}Muat PRESET domain${RESET} ${DIM}${GREY}(streaming, bank MY, Astro, RTMklik, CDN)${RESET}"
+  echo -e "${GOLD}${BOLD}Muat PRESET domain${RESET} ${DIM}${GREY}(streaming, bank MY, Astro, Ott, CDN)${RESET}"
   echo -e "${DIM}${GREY}Domain custom sedia ada dikekalkan di bawah (CUSTOM).${RESET}"
   read -rp "$(echo -e "  ${CYAN}Teruskan? type YES:${RESET} ")" ans
   [ "$ans" = "YES" ] || { info "Cancelled."; return 0; }
