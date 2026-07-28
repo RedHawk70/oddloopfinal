@@ -1,5 +1,6 @@
 #!/bin/bash
-# XRAY WARP / FREEDOM / SOCKS5 MENU (+preset +auto DNS/QUIC fulltunnel +exclude bypass)
+# XRAY WARP V1 / WARP V2 WIREGUARD / FREEDOM / SOCKS5 MENU
+# (+preset +auto DNS/QUIC fulltunnel +exclude bypass)
 # no jq | keep #comments | anchor = FIRST multi-line rule containing "domain": [
 set -euo pipefail
 
@@ -10,6 +11,10 @@ WARP_PORT="40000"
 FLUSH_PLACEHOLDER="domain:example.net"
 SOCKS5_TAG="socks5"
 SOCKS5_ADDR=""; SOCKS5_PORT=""; SOCKS5_USER=""; SOCKS5_PASS=""
+WARP2_TAG="warp2"
+WG_PRIVATE_KEY=""; WG_ADDRESS=""; WG_PUBLIC_KEY=""; WG_ALLOWED_IPS=""
+WG_ENDPOINT=""; WG_MTU="1280"; WG_PRESHARED_KEY=""; WG_KEEPALIVE="0"
+WG_RESERVED=""; WG_NO_KERNEL_TUN="true"; WG_DOMAIN_STRATEGY="ForceIP"
 
 RESET="\e[0m"; BOLD="\e[1m"; DIM="\e[2m"; WHITE="\e[97m"
 GREEN="\e[92m"; YELLOW="\e[93m"; ORANGE="\e[38;5;208m"
@@ -235,7 +240,9 @@ get_mode_file() {
       line=$0
       if(line ~ /{[ \t]*$/){inRule=1;brace=1;hasDom=0}
       else if(inRule==1){if(index(line,"{")>0)brace++;if(index(line,"}")>0)brace--}
-      if(inRule==1 && line ~ /"domain"[ \t]*:[ \t]*\[/) hasDom=1
+      # Hanya baca anchor DOMAIN LIST multi-line.
+      # Rule EXCLUDE satu baris juga ada domain/outboundTag=direct dan mesti diabaikan.
+      if(inRule==1 && line ~ /"domain"[ \t]*:[ \t]*\[[ \t]*$/) hasDom=1
       if(inRule==1 && hasDom==1 && line ~ /"outboundTag"[ \t]*:/){
         v=line;gsub(/.*"outboundTag"[ \t]*:[ \t]*"/,"",v);gsub(/".*/,"",v);print trim(v);exit
       }
@@ -244,15 +251,16 @@ get_mode_file() {
 }
 
 get_global_mode() {
-  local w=0 d=0 s=0 u=0 m="" f
+  local w=0 v=0 d=0 s=0 u=0 m="" f
   for f in "${CFG_LIST[@]}"; do
     [ -f "$f" ] || continue
     m="$(get_mode_file "$f")"
-    case "$m" in warp) w=1;; direct) d=1;; socks5) s=1;; *) u=1;; esac
+    case "$m" in warp) w=1;; warp2) v=1;; direct) d=1;; socks5) s=1;; *) u=1;; esac
   done
-  if   [ $w -eq 1 ] && [ $d -eq 0 ] && [ $s -eq 0 ] && [ $u -eq 0 ]; then echo warp
-  elif [ $d -eq 1 ] && [ $w -eq 0 ] && [ $s -eq 0 ] && [ $u -eq 0 ]; then echo direct
-  elif [ $s -eq 1 ] && [ $w -eq 0 ] && [ $d -eq 0 ] && [ $u -eq 0 ]; then echo socks5
+  if   [ $w -eq 1 ] && [ $v -eq 0 ] && [ $d -eq 0 ] && [ $s -eq 0 ] && [ $u -eq 0 ]; then echo warp
+  elif [ $v -eq 1 ] && [ $w -eq 0 ] && [ $d -eq 0 ] && [ $s -eq 0 ] && [ $u -eq 0 ]; then echo warp2
+  elif [ $d -eq 1 ] && [ $w -eq 0 ] && [ $v -eq 0 ] && [ $s -eq 0 ] && [ $u -eq 0 ]; then echo direct
+  elif [ $s -eq 1 ] && [ $w -eq 0 ] && [ $v -eq 0 ] && [ $d -eq 0 ] && [ $u -eq 0 ]; then echo socks5
   else echo mixed; fi
 }
 
@@ -391,6 +399,7 @@ show_domains_global() {
 marker_text_for_mode() {
   case "$1" in
     warp)   echo "/* ===== DOMAIN WARP (MUDAH BUANG) ===== */" ;;
+    warp2)  echo "/* ===== DOMAIN WARP V2 WIREGUARD (MUDAH BUANG) ===== */" ;;
     socks5) echo "/* ===== DOMAIN LALU SOCKS5 (TAMBAH / BUANG DI SINI) ===== */" ;;
     direct) echo "/* ===== DOMAIN FREEDOM (MUDAH BUANG) ===== */" ;;
     *)      echo "/* ===== DOMAIN LIST ===== */" ;;
@@ -622,6 +631,215 @@ manage_exclude() {
 }
 
 socks5_outbound_exists_file(){ grep -Eq '"tag"[[:space:]]*:[[:space:]]*"socks5"' "$1"; }
+warp2_outbound_exists_file(){ grep -Eq '"tag"[[:space:]]*:[[:space:]]*"warp2"' "$1"; }
+
+trim_value() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+validate_safe_json_value() {
+  local label="$1" value="$2"
+  [[ "$value" != *\"* && "$value" != *\\* ]] || die "$label mengandungi aksara yang tidak dibenarkan."
+}
+
+validate_wg_key() {
+  local label="$1" value="$2"
+  [[ "$value" =~ ^[A-Za-z0-9+/]{43}=$ ]] || die "$label bukan key WireGuard Base64 yang sah."
+}
+
+csv_to_json_array() {
+  local input="$1" item output="" old_ifs="$IFS"
+  IFS=','
+  read -ra items <<< "$input"
+  IFS="$old_ifs"
+  for item in "${items[@]}"; do
+    item="$(trim_value "$item")"
+    [ -n "$item" ] || continue
+    validate_safe_json_value "Nilai senarai" "$item"
+    if [ -n "$output" ]; then output+=", "; fi
+    output+="\"$item\""
+  done
+  [ -n "$output" ] || return 1
+  printf '[%s]' "$output"
+}
+
+validate_reserved_bytes() {
+  local input="$1" part old_ifs="$IFS"
+  [ -z "$input" ] && return 0
+  IFS=','
+  read -ra parts <<< "$input"
+  IFS="$old_ifs"
+  [ "${#parts[@]}" -eq 3 ] || die "Reserved mesti 3 nombor, contoh 0,0,0."
+  for part in "${parts[@]}"; do
+    part="$(trim_value "$part")"
+    [[ "$part" =~ ^[0-9]+$ ]] || die "Reserved mesti nombor."
+    [ "$part" -ge 0 ] && [ "$part" -le 255 ] || die "Reserved mesti antara 0 hingga 255."
+  done
+}
+
+reserved_to_json_array() {
+  local input="$1" part output="" old_ifs="$IFS"
+  IFS=','
+  read -ra parts <<< "$input"
+  IFS="$old_ifs"
+  for part in "${parts[@]}"; do
+    part="$(trim_value "$part")"
+    if [ -n "$output" ]; then output+=", "; fi
+    output+="$part"
+  done
+  printf '[%s]' "$output"
+}
+
+prompt_warp2_details() {
+  local input=""
+  WG_MTU="1280"; WG_PRESHARED_KEY=""; WG_KEEPALIVE="0"
+  WG_RESERVED=""; WG_NO_KERNEL_TUN="true"; WG_DOMAIN_STRATEGY="ForceIP"
+  echo
+  echo -e "${YELLOW}Isi maklumat WireGuard untuk WARP Version 2:${RESET}"
+  echo -e "${DIM}${GREY}DNS dari fail WireGuard tidak dimasukkan kerana outbound Xray guna DNS Xray.${RESET}"
+
+  read -rsp "  PrivateKey                         : " WG_PRIVATE_KEY
+  echo
+  WG_PRIVATE_KEY="$(trim_value "$WG_PRIVATE_KEY")"
+  [ -n "$WG_PRIVATE_KEY" ] || die "PrivateKey kosong."
+  validate_safe_json_value "PrivateKey" "$WG_PRIVATE_KEY"
+  validate_wg_key "PrivateKey" "$WG_PRIVATE_KEY"
+
+  read -rp "  Address (pisahkan dengan koma)     : " WG_ADDRESS
+  WG_ADDRESS="$(trim_value "$WG_ADDRESS")"
+  [ -n "$WG_ADDRESS" ] || die "Address kosong."
+  csv_to_json_array "$WG_ADDRESS" >/dev/null || die "Address tidak sah."
+
+  read -rp "  PublicKey                          : " WG_PUBLIC_KEY
+  WG_PUBLIC_KEY="$(trim_value "$WG_PUBLIC_KEY")"
+  [ -n "$WG_PUBLIC_KEY" ] || die "PublicKey kosong."
+  validate_safe_json_value "PublicKey" "$WG_PUBLIC_KEY"
+  validate_wg_key "PublicKey" "$WG_PUBLIC_KEY"
+
+  read -rp "  AllowedIPs [0.0.0.0/0, ::/0]      : " WG_ALLOWED_IPS
+  WG_ALLOWED_IPS="$(trim_value "$WG_ALLOWED_IPS")"
+  [ -n "$WG_ALLOWED_IPS" ] || WG_ALLOWED_IPS="0.0.0.0/0, ::/0"
+  csv_to_json_array "$WG_ALLOWED_IPS" >/dev/null || die "AllowedIPs tidak sah."
+
+  read -rp "  Endpoint [engage.cloudflareclient.com:2408]: " WG_ENDPOINT
+  WG_ENDPOINT="$(trim_value "$WG_ENDPOINT")"
+  [ -n "$WG_ENDPOINT" ] || WG_ENDPOINT="engage.cloudflareclient.com:2408"
+  [[ "$WG_ENDPOINT" =~ :([0-9]{1,5})$ ]] || die "Endpoint mesti dalam format host:port."
+  [ "${BASH_REMATCH[1]}" -ge 1 ] && [ "${BASH_REMATCH[1]}" -le 65535 ] || die "Port Endpoint tidak sah."
+  validate_safe_json_value "Endpoint" "$WG_ENDPOINT"
+
+  read -rp "  MTU [1280]                         : " input
+  input="$(trim_value "$input")"; [ -n "$input" ] && WG_MTU="$input"
+  [[ "$WG_MTU" =~ ^[0-9]+$ ]] || die "MTU mesti nombor."
+  [ "$WG_MTU" -ge 576 ] && [ "$WG_MTU" -le 9000 ] || die "MTU mesti antara 576 hingga 9000."
+
+  read -rsp "  PresharedKey (kosong=tiada)        : " WG_PRESHARED_KEY
+  echo
+  WG_PRESHARED_KEY="$(trim_value "$WG_PRESHARED_KEY")"
+  validate_safe_json_value "PresharedKey" "$WG_PRESHARED_KEY"
+  [ -z "$WG_PRESHARED_KEY" ] || validate_wg_key "PresharedKey" "$WG_PRESHARED_KEY"
+
+  read -rp "  PersistentKeepalive [0]            : " input
+  input="$(trim_value "$input")"; [ -n "$input" ] && WG_KEEPALIVE="$input"
+  [[ "$WG_KEEPALIVE" =~ ^[0-9]+$ ]] || die "PersistentKeepalive mesti nombor."
+  [ "$WG_KEEPALIVE" -le 65535 ] || die "PersistentKeepalive terlalu besar."
+
+  read -rp "  Reserved (contoh 0,0,0; kosong=tiada): " WG_RESERVED
+  WG_RESERVED="$(trim_value "$WG_RESERVED")"
+  validate_reserved_bytes "$WG_RESERVED"
+
+  read -rp "  noKernelTun [true, untuk 2 servis] : " input
+  input="$(trim_value "$input")"; [ -n "$input" ] && WG_NO_KERNEL_TUN="${input,,}"
+  [[ "$WG_NO_KERNEL_TUN" = "true" || "$WG_NO_KERNEL_TUN" = "false" ]] || die "noKernelTun mesti true atau false."
+
+  read -rp "  domainStrategy [ForceIP]           : " input
+  input="$(trim_value "$input")"; [ -n "$input" ] && WG_DOMAIN_STRATEGY="$input"
+  case "$WG_DOMAIN_STRATEGY" in
+    ForceIP|ForceIPv4|ForceIPv6|ForceIPv4v6|ForceIPv6v4) ;;
+    *) die "domainStrategy tidak sah." ;;
+  esac
+}
+
+remove_warp2_outbound_file() {
+  awk '
+    BEGIN{inOut=0;inObj=0;depth=0;n=0;isWarp2=0}
+    {
+      line=$0
+      if(inOut==0){
+        print line
+        if(line ~ /"outbounds"[ \t]*:[ \t]*\[/) inOut=1
+        next
+      }
+      if(inObj==0 && line ~ /^[ \t]*{[ \t]*$/){
+        inObj=1;depth=1;n=1;buf[n]=line;isWarp2=0;next
+      }
+      if(inObj==1){
+        n++;buf[n]=line
+        if(line ~ /"tag"[ \t]*:[ \t]*"warp2"/) isWarp2=1
+        tmp=line;o=gsub(/{/,"&",tmp);c=gsub(/}/,"&",tmp);depth+=o-c
+        if(depth<=0){
+          if(isWarp2==0) for(i=1;i<=n;i++) print buf[i]
+          inObj=0;depth=0;n=0;isWarp2=0;delete buf
+        }
+        next
+      }
+      print line
+      if(line ~ /^[ \t]*][ \t]*,?[ \t]*$/) inOut=0
+    }' "$1" > "$1.tmp" && mv "$1.tmp" "$1"
+}
+
+insert_warp2_outbound_file() {
+  local f="$1" blk addr_json allowed_json reserved_json=""
+  blk="$(mktemp)"
+  addr_json="$(csv_to_json_array "$WG_ADDRESS")"
+  allowed_json="$(csv_to_json_array "$WG_ALLOWED_IPS")"
+  [ -n "$WG_RESERVED" ] && reserved_json="$(reserved_to_json_array "$WG_RESERVED")"
+  {
+    echo "    {"
+    echo "      \"protocol\": \"wireguard\","
+    echo "      \"tag\": \"${WARP2_TAG}\","
+    echo "      \"settings\": {"
+    echo "        \"secretKey\": \"${WG_PRIVATE_KEY}\","
+    echo "        \"address\": ${addr_json},"
+    echo "        \"peers\": ["
+    echo "          {"
+    echo "            \"endpoint\": \"${WG_ENDPOINT}\","
+    echo "            \"publicKey\": \"${WG_PUBLIC_KEY}\","
+    [ -n "$WG_PRESHARED_KEY" ] && echo "            \"preSharedKey\": \"${WG_PRESHARED_KEY}\","
+    echo "            \"keepAlive\": ${WG_KEEPALIVE},"
+    echo "            \"allowedIPs\": ${allowed_json}"
+    echo "          }"
+    echo "        ],"
+    echo "        \"noKernelTun\": ${WG_NO_KERNEL_TUN},"
+    echo "        \"mtu\": ${WG_MTU},"
+    [ -n "$reserved_json" ] && echo "        \"reserved\": ${reserved_json},"
+    echo "        \"domainStrategy\": \"${WG_DOMAIN_STRATEGY}\""
+    echo "      }"
+    echo "    },"
+  } > "$blk"
+  awk -v BLK="$blk" '
+    BEGIN{inOut=0;inObj=0;brace=0;done=0}
+    {
+      line=$0;print line
+      if(done==1) next
+      if(inOut==0){if(line ~ /"outbounds"[ \t]*:[ \t]*\[/)inOut=1;next}
+      if(inObj==0 && line ~ /^[ \t]*{[ \t]*$/){inObj=1;brace=1;next}
+      if(inObj==1){
+        tmp=line;o=gsub(/{/,"&",tmp);c=gsub(/}/,"&",tmp);brace+=o-c
+        if(brace<=0){while((getline l < BLK)>0)print l;close(BLK);done=1}
+      }
+    }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  rm -f "$blk"
+}
+
+upsert_warp2_outbound_file() {
+  local f="$1"
+  warp2_outbound_exists_file "$f" && remove_warp2_outbound_file "$f"
+  insert_warp2_outbound_file "$f"
+}
 
 prompt_socks5_details() {
   echo; echo -e "${YELLOW}Isi maklumat server SOCKS5:${RESET}"
@@ -713,9 +931,10 @@ set_mode_file() {
       line=$0
       if(line ~ /{[ \t]*$/){inRule=1;brace=1;hasDom=0}
       else if(inRule==1){if(index(line,"{")>0)brace++;if(index(line,"}")>0)brace--}
-      if(done==0 && inRule==1 && line ~ /"domain"[ \t]*:[ \t]*\[/) hasDom=1
+      # Jangan tersentuh rule EXCLUDE satu baris; ubah anchor DOMAIN LIST sahaja.
+      if(done==0 && inRule==1 && line ~ /"domain"[ \t]*:[ \t]*\[[ \t]*$/) hasDom=1
       if(done==0 && inRule==1 && hasDom==1 && line ~ /"outboundTag"[ \t]*:/){
-        sub(/"(warp|direct|socks5)"/,"\"" MODE "\"",line); done=1
+        sub(/"(warp|warp2|direct|socks5)"/,"\"" MODE "\"",line); done=1
       }
       print line
       if(inRule==1 && brace<=0){inRule=0;brace=0;hasDom=0}
@@ -752,7 +971,28 @@ apply_mode_all() {
   restart_xray_all
 }
 
-do_warp(){ local scope; scope="$(prompt_scope "WARP")"; apply_mode_all "warp" "$scope"; }
+do_warp(){ local scope; scope="$(prompt_scope "WARP V1")"; apply_mode_all "warp" "$scope"; }
+
+enable_warp2_mode() {
+  prompt_warp2_details
+  local scope; scope="$(prompt_scope "WARP V2")"
+  local firsttag; if [ "$scope" = "all" ]; then firsttag="$WARP2_TAG"; else firsttag="direct"; fi
+  local changed=0 skipped=0 f
+  for f in "${CFG_LIST[@]}"; do
+    [ -f "$f" ] || { skipped=$((skipped+1)); continue; }
+    backup "$f"
+    upsert_warp2_outbound_file "$f"
+    set_marker_file "$f" "$WARP2_TAG"
+    set_mode_file "$f" "$WARP2_TAG"
+    ensure_first_outbound_file "$f" "$firsttag"
+    apply_dns_tweak_file "$f" "$scope"
+    changed=$((changed+1))
+  done
+  if [ "$scope" = "all" ]; then ok "WARP V2 WireGuard | Skop: SEMUA trafik + DNS/QUIC fix (changed=$changed skipped=$skipped)"
+  else ok "WARP V2 WireGuard | Skop: domain list sahaja (changed=$changed skipped=$skipped)"; fi
+  restart_xray_all
+}
+
 do_freedom(){ apply_mode_all "direct" "list"; }
 
 enable_socks5_mode() {
@@ -1023,7 +1263,8 @@ hrh(){ echo -e "${1}$(repeat "$UIW" '━')${RESET}"; }
 
 mode_badge() {
   case "$1" in
-    warp)   echo -e "${GREEN}${BOLD}WARP${RESET}" ;;
+    warp)   echo -e "${GREEN}${BOLD}WARP V1${RESET}" ;;
+    warp2)  echo -e "${LIME}${BOLD}WARP V2${RESET}" ;;
     direct) echo -e "${ORANGE}${BOLD}FREEDOM${RESET}" ;;
     socks5) echo -e "${CYAN}${BOLD}SOCKS5${RESET}" ;;
     *)      echo -e "${YELLOW}${BOLD}MIXED${RESET}" ;;
@@ -1035,8 +1276,8 @@ section(){ echo -e "  ${1}| ${BOLD}${WHITE}${2}${RESET}"; }
 
 print_header() {
   hrh "$1"
-  echo -e "  ${BOLD}${WHITE}XRAY ROUTING ENGINE${RESET}"
-  echo -e "  ${DIM}${GREY}warp . freedom . socks5 . router${RESET}"
+  echo -e "  ${BOLD}${WHITE}XRAY ROUTING ENGINE BY NILPHREAKZ${RESET}"
+  echo -e "  ${DIM}${GREY}warp v1 . warp v2 . freedom . socks5${RESET}"
   hrh "$1"
 }
 
@@ -1047,13 +1288,13 @@ while true; do
   UIW="$(ui_width)"
   gm="$(get_global_mode)"; sk="$(get_global_socks)"; sc="$(get_global_scope)"
   exclude_global_list; xc="${#EXCLUDE_GLOBAL[@]}"
-  case "$gm" in warp) BAR="$GREEN";; direct) BAR="$ORANGE";; socks5) BAR="$CYAN";; *) BAR="$YELLOW";; esac
+  case "$gm" in warp) BAR="$GREEN";; warp2) BAR="$LIME";; direct) BAR="$ORANGE";; socks5) BAR="$CYAN";; *) BAR="$YELLOW";; esac
 
   print_header "$BAR"
   echo
   section "$VIOLET" "STATUS"
   echo -e "   ${GREY}Mode  :${RESET} $(mode_badge "$gm")"
-  if [ "$gm" = "warp" ] || [ "$gm" = "socks5" ]; then
+  if [ "$gm" = "warp" ] || [ "$gm" = "warp2" ] || [ "$gm" = "socks5" ]; then
     echo -e "   ${GREY}Scope :${RESET} $(scope_badge "$sc")"
     if [ "$sc" = "all" ]; then
       ft="$(get_fulltunnel_applied)"
@@ -1068,7 +1309,8 @@ while true; do
 
   echo
   section "$TEAL" "MODE"
-  echo -e "   ${GREEN}${BOLD}1${RESET}  ${WHITE}Enable WARP${RESET}    ${DIM}${GREY}pilih skop${RESET}"
+  echo -e "   ${GREEN}${BOLD}1${RESET}  ${WHITE}Enable WARP V1${RESET} ${DIM}${GREY}SOCKS5 127.0.0.1${RESET}"
+  echo -e "   ${LIME}${BOLD}v${RESET}  ${WHITE}Enable WARP V2${RESET} ${DIM}${GREY}WireGuard dalam Xray${RESET}"
   echo -e "   ${ORANGE}${BOLD}2${RESET}  ${WHITE}Set FREEDOM${RESET}    ${DIM}${GREY}semua direct${RESET}"
   echo -e "   ${CYAN}${BOLD}3${RESET}  ${WHITE}Set SOCKS5${RESET}     ${DIM}${GREY}pilih skop${RESET}"
   hr "$TEAL"
@@ -1093,12 +1335,14 @@ while true; do
   hr "$PINK"
 
   echo
-  echo -e "  ${DIM}${GREY}Tip: 'p' = preset besar . 'x' = domain yang TAK NAK lalu warp/socks5${RESET}"
+  echo -e "  ${DIM}${GREY}Tip: Ubah dns ke 1.1.1.1 jika guna WARP V1 (recommend)${RESET}"
+  echo -e "  ${DIM}${GREY}Note: Found some bugs? Please contact me on tele @NiLphreakz${RESET}"
   echo
 
   read -rp "$(echo -e "  ${CYAN}${BOLD}Pilih:${RESET} ")" c
   case "$c" in
     1)   do_warp ;;
+    v|V) enable_warp2_mode ;;
     2)   do_freedom ;;
     3)   enable_socks5_mode ;;
     p|P) load_preset_all ;;
