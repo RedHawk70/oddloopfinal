@@ -846,14 +846,30 @@ prompt_socks5_details() {
   read -rp "  Address (IP/host): " SOCKS5_ADDR
   read -rp "  Port             : " SOCKS5_PORT
   read -rp "  User (kosong=skip): " SOCKS5_USER
-  read -rp "  Pass (kosong=skip): " SOCKS5_PASS
+  read -rsp "  Pass (kosong=skip): " SOCKS5_PASS
+  echo
   SOCKS5_ADDR="${SOCKS5_ADDR// /}"; SOCKS5_PORT="${SOCKS5_PORT// /}"
   [ -n "$SOCKS5_ADDR" ] || die "Address kosong."
   [[ "$SOCKS5_PORT" =~ ^[0-9]+$ ]] || die "Port mesti nombor."
+  [ "$SOCKS5_PORT" -ge 1 ] && [ "$SOCKS5_PORT" -le 65535 ] || die "Port mesti antara 1 hingga 65535."
+}
+
+json_escape_string() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\t'/\\t}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\n'/\\n}"
+  printf '%s' "$value"
 }
 
 insert_socks5_outbound_file() {
-  local f="$1" blk; blk="$(mktemp)"
+  local f="$1" blk esc_addr esc_user esc_pass
+  blk="$(mktemp)"
+  esc_addr="$(json_escape_string "$SOCKS5_ADDR")"
+  esc_user="$(json_escape_string "$SOCKS5_USER")"
+  esc_pass="$(json_escape_string "$SOCKS5_PASS")"
   {
     echo "    {"
     echo "      \"protocol\": \"socks\","
@@ -862,13 +878,13 @@ insert_socks5_outbound_file() {
     echo "        \"servers\": ["
     echo "          {"
     if [ -n "$SOCKS5_USER" ] || [ -n "$SOCKS5_PASS" ]; then
-      echo "            \"address\": \"${SOCKS5_ADDR}\","
+      echo "            \"address\": \"${esc_addr}\","
       echo "            \"port\": ${SOCKS5_PORT},"
       echo "            \"users\": ["
-      echo "              { \"user\": \"${SOCKS5_USER}\", \"pass\": \"${SOCKS5_PASS}\" }"
+      echo "              { \"user\": \"${esc_user}\", \"pass\": \"${esc_pass}\" }"
       echo "            ]"
     else
-      echo "            \"address\": \"${SOCKS5_ADDR}\","
+      echo "            \"address\": \"${esc_addr}\","
       echo "            \"port\": ${SOCKS5_PORT}"
     fi
     echo "          }"
@@ -892,35 +908,54 @@ insert_socks5_outbound_file() {
   rm -f "$blk"
 }
 
-update_socks5_outbound_file() {
-  awk -v ADDR="$SOCKS5_ADDR" -v PORT="$SOCKS5_PORT" -v USER="$SOCKS5_USER" -v PASS="$SOCKS5_PASS" '
-    BEGIN{inOut=0;inObj=0;brace=0;n=0;istag=0}
+remove_socks5_outbound_file() {
+  awk '
+    BEGIN{inOut=0;nobj=0;depth=0}
     {
-      line=$0
-      if(inOut==0){print line; if(line ~ /"outbounds"[ \t]*:[ \t]*\[/)inOut=1; next}
-      if(inObj==0 && line ~ /^[ \t]*{[ \t]*$/){inObj=1;brace=1;n=1;buf[n]=line;istag=0;next}
-      if(inObj==1){
-        n++; buf[n]=line
-        o=gsub(/[{]/,"&",line); c=gsub(/[}]/,"&",line); brace += o - c
-        if(line ~ /"tag"[ \t]*:[ \t]*"socks5"/) istag=1
-        if(brace<=0){
-          for(i=1;i<=n;i++){
-            l=buf[i]
-            if(istag==1){
-              if(l ~ /"address"[ \t]*:/) sub(/"address"[ \t]*:[ \t]*"[^"]*"/,"\"address\": \"" ADDR "\"",l)
-              else if(l ~ /"port"[ \t]*:/) sub(/"port"[ \t]*:[ \t]*[0-9]+/,"\"port\": " PORT,l)
-              else if(l ~ /"user"[ \t]*:/) sub(/"user"[ \t]*:[ \t]*"[^"]*"/,"\"user\": \"" USER "\"",l)
-              else if(l ~ /"pass"[ \t]*:/) sub(/"pass"[ \t]*:[ \t]*"[^"]*"/,"\"pass\": \"" PASS "\"",l)
-            }
-            print l
-          }
-          inObj=0;brace=0;n=0;istag=0;delete buf; next
-        }
+      if(inOut==0){
+        print $0
+        if($0 ~ /"outbounds"[ \t]*:[ \t]*\[/) inOut=1
         next
       }
-      print line
-      if(line ~ /^[ \t]*][ \t]*,?[ \t]*$/) inOut=0
+      if(depth==0 && $0 ~ /^[ \t]*][ \t]*,?[ \t]*$/){
+        kept=0
+        for(i=1;i<=nobj;i++) if(tag[i]!="socks5") order[++kept]=i
+        for(k=1;k<=kept;k++){
+          idx=order[k];m=split(buf[idx],lines,"\n")
+          for(j=1;j<=m;j++){
+            current=lines[j]
+            if(j==m){
+              sub(/,[ \t]*$/,"",current)
+              if(k<kept) current=current ","
+            }
+            print current
+          }
+        }
+        print $0
+        inOut=0
+        next
+      }
+      line=$0
+      tmp=line;o=gsub(/{/,"&",tmp);c=gsub(/}/,"&",tmp)
+      if(depth==0 && o>0){
+        nobj++;buf[nobj]=line;tag[nobj]=""
+      } else {
+        buf[nobj]=buf[nobj] "\n" line
+      }
+      if(line ~ /"tag"[ \t]*:[ \t]*"[^"]*"/){
+        value=line
+        gsub(/.*"tag"[ \t]*:[ \t]*"/,"",value)
+        gsub(/".*/,"",value)
+        tag[nobj]=value
+      }
+      depth+=o-c
     }' "$1" > "$1.tmp" && mv "$1.tmp" "$1"
+}
+
+update_socks5_outbound_file() {
+  local f="$1"
+  remove_socks5_outbound_file "$f"
+  insert_socks5_outbound_file "$f"
 }
 
 set_mode_file() {
