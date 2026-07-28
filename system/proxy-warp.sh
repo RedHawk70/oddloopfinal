@@ -1344,10 +1344,10 @@ while true; do
 
   echo
   section "$TEAL" "MODE"
-  echo -e "   ${GREEN}${BOLD}1${RESET}  ${WHITE}Enable WARP V1${RESET} ${DIM}${GREY}SOCKS5 127.0.0.1${RESET}"
-  echo -e "   ${LIME}${BOLD}v${RESET}  ${WHITE}Enable WARP V2${RESET} ${DIM}${GREY}WireGuard dalam Xray${RESET}"
-  echo -e "   ${ORANGE}${BOLD}2${RESET}  ${WHITE}Set FREEDOM${RESET}    ${DIM}${GREY}semua direct${RESET}"
-  echo -e "   ${CYAN}${BOLD}3${RESET}  ${WHITE}Set SOCKS5${RESET}     ${DIM}${GREY}pilih skop${RESET}"
+  echo -e "   ${GREEN}${BOLD}1${RESET}  ${WHITE}Enable WARP V1${RESET} ${DIM}${GREY}Warp SOCKS5 local 127.0.0.1${RESET}"
+  echo -e "   ${LIME}${BOLD}v${RESET}  ${WHITE}Enable WARP V2${RESET} ${DIM}${GREY}WireGuard Config dalam Xray${RESET}"
+  echo -e "   ${ORANGE}${BOLD}2${RESET}  ${WHITE}Set FREEDOM${RESET}    ${DIM}${GREY}semua traffic direct (default)${RESET}"
+  echo -e "   ${CYAN}${BOLD}3${RESET}  ${WHITE}Set SOCKS5${RESET}     ${DIM}${GREY}SOCKS5 Proxy${RESET}"
   hr "$TEAL"
 
   echo
