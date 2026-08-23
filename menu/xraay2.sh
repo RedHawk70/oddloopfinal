@@ -35,8 +35,8 @@ export number=$(cat /etc/number)
 # // TOTAL ACC CREATE VMESS WS
 export total1=$(grep -c -E "^#vms " "/usr/local/etc/xray/config.json")
 
-# // TOTAL ACC CREATE  VLESS WS
-export total2=$(grep -c -E "^#vls " "/usr/local/etc/xray/config.json")
+# // TOTAL ACC CREATE VLESS WS
+export total2=$(grep -E '^#vls ' "/usr/local/etc/xray/config.json" | awk '{print $2}' | sort -u | wc -l)
 
 # // TOTAL ACC CREATE  VLESS TCP XTLS
 export total3=$(grep -c -E "^#vxtls " "/usr/local/etc/xray/config.json")
@@ -781,101 +781,347 @@ exec xraay
 # ADD USER VLESS WS
 function menu6 () {
 clear
-tls="$(cat ~/log-install.txt | grep -w "Vless Ws Tls" | cut -d: -f2|sed 's/ //g')"
-none="$(cat ~/log-install.txt | grep -w "Vless Ws None Tls" | cut -d: -f2|sed 's/ //g')"
-upgradetls="$(cat ~/log-install.txt | grep -w "Xray HttpUpgrade Tls" | cut -d: -f2|sed 's/ //g')"
-upgradenone="$(cat ~/log-install.txt | grep -w "Xray HttpUpgrade None Tls" | cut -d: -f2|sed 's/ //g')"
-xhttptls="$(cat ~/log-install.txt | grep -w "Xray Vless Xhttp Tls" | cut -d: -f2|sed 's/ //g')"
-xhttpnone="$(cat ~/log-install.txt | grep -w "Xray Vless Xhttp None Tls" | cut -d: -f2|sed 's/ //g')"
-echo -e   "  \e[$line═══════════════════════════════════════════════════════\e[m"
-echo -e   "  \e[$back_text           \e[30m[\e[$box CREATE USER XRAY VLESS WS TLS\e[30m ]\e[1m           \e[m"
-echo -e   "  \e[$line═══════════════════════════════════════════════════════\e[m"
-until [[ $user =~ ^[a-zA-Z0-9_]+$ && ${CLIENT_EXISTS} == '0' ]]; do
-		read -rp "   Username: " -e user
-		CLIENT_EXISTS=$(grep -w $user /usr/local/etc/xray/config.json | wc -l)
 
-		if [[ ${CLIENT_EXISTS} == '1' ]]; then
-			echo ""
-			echo "A client with the specified name was already created, please choose another name."
-			exit 1
-		fi
-	done
+tls="$(cat ~/log-install.txt | grep -w "Vless Ws Tls" | cut -d: -f2 | sed 's/ //g')"
+none="$(cat ~/log-install.txt | grep -w "Vless Ws None Tls" | cut -d: -f2 | sed 's/ //g')"
+upgradetls="$(cat ~/log-install.txt | grep -w "Xray HttpUpgrade Tls" | cut -d: -f2 | sed 's/ //g')"
+upgradenone="$(cat ~/log-install.txt | grep -w "Xray HttpUpgrade None Tls" | cut -d: -f2 | sed 's/ //g')"
+xhttptls="$(cat ~/log-install.txt | grep -w "Xray Vless Xhttp Tls" | cut -d: -f2 | sed 's/ //g')"
+xhttpnone="$(cat ~/log-install.txt | grep -w "Xray Vless Xhttp None Tls" | cut -d: -f2 | sed 's/ //g')"
+
+echo -e "  \e[$line═══════════════════════════════════════════════════════\e[m"
+echo -e "  \e[$back_text           \e[30m[\e[$box CREATE USER XRAY VLESS WS TLS\e[30m ]\e[1m           \e[m"
+echo -e "  \e[$line═══════════════════════════════════════════════════════\e[m"
+
+# ============================================================
+# CHECK USERNAME
+# ============================================================
+
+while true; do
+
+    read -rp "   Username: " -e user
+
+    # Username hanya huruf, nombor dan underscore
+    if ! [[ "$user" =~ ^[a-zA-Z0-9_]+$ ]]; then
+        echo ""
+        echo "Username tidak sah."
+        echo "Gunakan hanya huruf, nombor dan underscore."
+        echo ""
+        continue
+    fi
+
+    # ========================================================
+    # CHECK DUPLICATE USER
+    #
+    # Tidak kira user mempunyai:
+    # #vls
+    # #vls-http
+    # #vls-xhttp
+    #
+    # Kalau username wujud sekali pun, anggap account sudah ada.
+    # ========================================================
+
+    if grep -q -E "^#vls(-http|-xhttp)? ${user} " \
+        /usr/local/etc/xray/config.json \
+        || \
+       grep -q -E "^#vls(-http|-xhttp)? ${user} " \
+        /usr/local/etc/xray/none.json
+    then
+
+        echo ""
+        echo "A client with the specified name was already created."
+        echo "Username : $user"
+        echo ""
+        echo "Sila gunakan username lain."
+        echo ""
+
+        user=""
+        continue
+    fi
+
+    break
+
+done
+
+
+# ============================================================
+# UUID
+# ============================================================
+
 export patchtls=/vless
 export patchnontls=/vless
 export patchupgrade=/httpupgrade
 export patchxhttp=/xhttp
-export uuid=$(cat /proc/sys/kernel/random/uuid)
+
+export uuid="$(cat /proc/sys/kernel/random/uuid)"
+
+
+# ============================================================
+# BUG ADDRESS / SNI
+# ============================================================
 
 read -p "   Bug Address (Example: www.google.com) : " address
 read -p "   Bug SNI/Host (Example : m.facebook.com) : " sni
-read -p "   Input custom UUID (press Enter for random): " uuid_input
-read -p "   Expired (days) : " masaaktif
 
-bug_addr=${address}.
-bug_addr2=$address
-if [[ $address == "" ]]; then
-sts=$bug_addr2
-else
-sts=$bug_addr
-fi
-# normalize/validate function
+
+# ============================================================
+# CUSTOM UUID
+# ============================================================
+
+read -p "   Input custom UUID (press Enter for random): " uuid_input
+
+
 normalize_uuid() {
-  local u="$1"
-  # buang braces / quotes / spaces
-  u="${u//[\{\}\"]/}"
-  u="${u// /}"
-  # 32 hex tanpa dash -> tambah dash
-  if [[ "$u" =~ ^[0-9a-fA-F]{32}$ ]]; then
-    echo "${u:0:8}-${u:8:4}-${u:12:4}-${u:16:4}-${u:20:12}" | tr 'A-Z' 'a-z'
-    return 0
-  fi
-  # sudah berbentuk dashed uuid
-  if [[ "$u" =~ ^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}$ ]]; then
-    echo "$u" | tr 'A-Z' 'a-z'
-    return 0
-  fi
-  return 1
+
+    local u="$1"
+
+    # Buang braces / quotes / spaces
+    u="${u//[\{\}\"]/}"
+    u="${u// /}"
+
+    # UUID tanpa dash
+    if [[ "$u" =~ ^[0-9a-fA-F]{32}$ ]]; then
+
+        echo "${u:0:8}-${u:8:4}-${u:12:4}-${u:16:4}-${u:20:12}" | tr 'A-Z' 'a-z'
+
+        return 0
+    fi
+
+    # UUID dengan dash
+    if [[ "$u" =~ ^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}$ ]]; then
+
+        echo "$u" | tr 'A-Z' 'a-z'
+
+        return 0
+    fi
+
+    return 1
 }
 
+
 if [[ -z "$uuid_input" ]]; then
-  uuid="$(cat /proc/sys/kernel/random/uuid)"
-else
-  if normalized="$(normalize_uuid "$uuid_input")"; then
-    uuid="$normalized"
-  else
-    echo "UUID yang anda masukkan tidak sah. Akan generate automatik." >&2
+
     uuid="$(cat /proc/sys/kernel/random/uuid)"
-  fi
+
+else
+
+    if normalized="$(normalize_uuid "$uuid_input")"; then
+
+        uuid="$normalized"
+
+    else
+
+        echo ""
+        echo "UUID yang anda masukkan tidak sah."
+        echo "Akan generate UUID secara automatik."
+        echo ""
+
+        uuid="$(cat /proc/sys/kernel/random/uuid)"
+
+    fi
+
 fi
 
-export exp=`date -d "$masaaktif days" +"%Y-%m-%d"`
-export harini=`date -d "0 days" +"%Y-%m-%d"`
 
-sed -i '/#xray-vless-tls$/a\#vls '"$user $exp $harini $uuid"'\
-},{"id": "'""$uuid""'","email": "'""$user""'"' /usr/local/etc/xray/config.json
-sed -i '/#xray-vless-nontls$/a\#vls '"$user $exp $harini $uuid"'\
-},{"id": "'""$uuid""'","email": "'""$user""'"' /usr/local/etc/xray/none.json
-sed -i '/#httpupgrade-tls$/a\#vls-http '"$user $exp $harini $uuid"'\
-},{"id": "'""$uuid""'","email": "'""$user""'"' /usr/local/etc/xray/config.json
-sed -i '/#httpupgrade-nontls$/a\#vls-http '"$user $exp $harini $uuid"'\
-},{"id": "'""$uuid""'","email": "'""$user""'"' /usr/local/etc/xray/none.json
-sed -i '/#xray-vless-xhttp-tls[[:space:]]*$/a\#vls-xhttp '"$user $exp $harini $uuid"'\
-},{"id": "'""$uuid""'","email": "'""$user""'"' /usr/local/etc/xray/config.json
-sed -i '/#xray-vless-xhttp-nontls/a\#vls-xhttp '"$user $exp $harini $uuid"'\
-},{"id": "'""$uuid""'","email": "'""$user""'"' /usr/local/etc/xray/none.json
+# ============================================================
+# CHECK UUID DUPLICATE
+# ============================================================
+
+if grep -q "\"id\": \"$uuid\"" /usr/local/etc/xray/config.json \
+   || grep -q "\"id\": \"$uuid\"" /usr/local/etc/xray/none.json
+then
+
+    echo ""
+    echo "ERROR: UUID tersebut sudah digunakan."
+    echo "UUID : $uuid"
+    echo ""
+    echo "Sila gunakan UUID lain."
+    exit 1
+fi
+
+
+# ============================================================
+# EXPIRY
+# ============================================================
+
+read -p "   Expired (days) : " masaaktif
+
+export exp="$(date -d "$masaaktif days" +"%Y-%m-%d")"
+export harini="$(date -d "0 days" +"%Y-%m-%d")"
+
+
+# ============================================================
+# BUG ADDRESS
+# ============================================================
+
+bug_addr="${address}."
+bug_addr2="$address"
+
+if [[ "$address" == "" ]]; then
+
+    sts="$bug_addr2"
+
+else
+
+    sts="$bug_addr"
+
+fi
+
+
+# ============================================================
+# CREATE VLESS WS TLS
+# ============================================================
+
+sed -i '/#xray-vless-tls$/a\
+#vls '"$user $exp $harini $uuid"'\
+},{"id": "'"$uuid"'","email": "'"$user"'"' \
+/usr/local/etc/xray/config.json
+
+
+# ============================================================
+# CREATE VLESS WS NONE TLS
+# ============================================================
+
+sed -i '/#xray-vless-nontls$/a\
+#vls '"$user $exp $harini $uuid"'\
+},{"id": "'"$uuid"'","email": "'"$user"'"' \
+/usr/local/etc/xray/none.json
+
+
+# ============================================================
+# CREATE HTTPUPGRADE TLS
+# ============================================================
+
+sed -i '/#httpupgrade-tls$/a\
+#vls-http '"$user $exp $harini $uuid"'\
+},{"id": "'"$uuid"'","email": "'"$user"'"' \
+/usr/local/etc/xray/config.json
+
+
+# ============================================================
+# CREATE HTTPUPGRADE NONE TLS
+# ============================================================
+
+sed -i '/#httpupgrade-nontls$/a\
+#vls-http '"$user $exp $harini $uuid"'\
+},{"id": "'"$uuid"'","email": "'"$user"'"' \
+/usr/local/etc/xray/none.json
+
+
+# ============================================================
+# CREATE XHTTP TLS
+# ============================================================
+
+sed -i '/#xray-vless-xhttp-tls[[:space:]]*$/a\
+#vls-xhttp '"$user $exp $harini $uuid"'\
+},{"id": "'"$uuid"'","email": "'"$user"'"' \
+/usr/local/etc/xray/config.json
+
+
+# ============================================================
+# CREATE XHTTP NONE TLS
+# ============================================================
+
+sed -i '/#xray-vless-xhttp-nontls[[:space:]]*$/a\
+#vls-xhttp '"$user $exp $harini $uuid"'\
+},{"id": "'"$uuid"'","email": "'"$user"'"' \
+/usr/local/etc/xray/none.json
+
+
+# ============================================================
+# VERIFY ACCOUNT
+# ============================================================
+
+COUNT_CONFIG=$(grep -E "^#vls(-http|-xhttp)? ${user} " \
+    /usr/local/etc/xray/config.json | wc -l)
+
+COUNT_NONE=$(grep -E "^#vls(-http|-xhttp)? ${user} " \
+    /usr/local/etc/xray/none.json | wc -l)
+
+
+# ============================================================
+# VERIFY PROTOCOL TYPE
+# ============================================================
+
+CONFIG_WS=$(grep -c "^#vls ${user} " \
+    /usr/local/etc/xray/config.json)
+
+CONFIG_HTTP=$(grep -c "^#vls-http ${user} " \
+    /usr/local/etc/xray/config.json)
+
+CONFIG_XHTTP=$(grep -c "^#vls-xhttp ${user} " \
+    /usr/local/etc/xray/config.json)
+
+NONE_WS=$(grep -c "^#vls ${user} " \
+    /usr/local/etc/xray/none.json)
+
+NONE_HTTP=$(grep -c "^#vls-http ${user} " \
+    /usr/local/etc/xray/none.json)
+
+NONE_XHTTP=$(grep -c "^#vls-xhttp ${user} " \
+    /usr/local/etc/xray/none.json)
+
+echo ""
+
+
+# ============================================================
+# STOP IF STRUCTURE NOT CORRECT
+# ============================================================
+
+if [[ "$CONFIG_WS" != "1" ||
+      "$CONFIG_HTTP" != "1" ||
+      "$CONFIG_XHTTP" != "1" ||
+      "$NONE_WS" != "1" ||
+      "$NONE_HTTP" != "1" ||
+      "$NONE_XHTTP" != "1" ]]
+then
+
+    echo "=========================================="
+    echo " ERROR: VLESS ACCOUNT STRUCTURE INVALID"
+    echo "=========================================="
+    echo ""
+    echo "Account tidak lengkap."
+    echo "Xray TIDAK akan direstart."
+    echo ""
+
+    exit 1
+
+fi
+
+
+# ============================================================
+# GENERATE VLESS LINKS
+# ============================================================
 
 export vlesslink1="vless://${uuid}@${sts}${domain}:$tls?path=$patchtls&security=tls&encryption=none&type=ws&sni=$sni#${user}_${exp}"
+
 export vlesslink2="vless://${uuid}@${sts}${domain}:$none?path=$patchnontls&encryption=none&host=$sni&type=ws#${user}_${exp}"
+
 export vlesslink3="vless://${uuid}@${sts}${domain}:$upgradetls?path=$patchupgrade&security=tls&encryption=none&type=httpupgrade&sni=$sni#${user}_${exp}"
+
 export vlesslink4="vless://${uuid}@${sts}${domain}:$upgradenone?path=$patchupgrade&encryption=none&host=$sni&type=httpupgrade#${user}_${exp}"
+
 export vlesslink5="vless://${uuid}@${sts}${domain}:$xhttptls?path=$patchxhttp&security=tls&encryption=none&type=xhttp&sni=$sni#${user}_${exp}"
+
 export vlesslink6="vless://${uuid}@${sts}${domain}:$xhttpnone?path=$patchxhttp&encryption=none&host=$sni&type=xhttp#${user}_${exp}"
+
+
+# ============================================================
+# RESTART XRAY
+# ============================================================
 
 systemctl stop xray
 systemctl stop xray@config
+
 systemctl start xray
 systemctl start xray@config
+
 systemctl restart xray@none
+
+
+# ============================================================
+# CREATE USER FILE
+# ============================================================
 
 cat > /home/vps/public_html/vless-$user.txt <<-END
 
@@ -883,82 +1129,135 @@ cat > /home/vps/public_html/vless-$user.txt <<-END
              P R O J E C T  O F  N I L P H R E A K Z V P N
                        [Freedom Internet]
 ====================================================================
+
              https://github.com/NiL070/oddloop
+
 ====================================================================
              Format Vless WS - SPv2
 ====================================================================
 
              Link Vless Account
 ====================================================================
+
 Remarks               : ${user}
 Domain                : ${domain}
 IP/Host               : $MYIP
+
 Port TLS              : $tls
 Port None TLS         : $none
+
 User ID               : ${uuid}
+
 Encryption            : None
 Network               : WebSocket
+
 Path Ws Tls           : $patchtls
 Path Ws None Tls      : $patchnontls
 Path HttpUpgrade      : $patchupgrade
 Path Xhttp            : $patchxhttp
+
 AllowInsecure         : True/allow
+
 ====================================================================
+
 Link Ws TLS : $vlesslink1
+
 ====================================================================
+
 Link Ws NTLS (Multipath) : $vlesslink2
+
 ====================================================================
-Link HttpUpgrade TLS     : $vlesslink3
+
+Link HttpUpgrade TLS : $vlesslink3
+
 ====================================================================
-Link HttpUpgrade NTLS    : $vlesslink4
+
+Link HttpUpgrade NTLS : $vlesslink4
+
 ====================================================================
-Link Xhttp TLS           : $vlesslink5
+
+Link Xhttp TLS : $vlesslink5
+
 ====================================================================
-Link Xhttp NTLS          : $vlesslink6
+
+Link Xhttp NTLS : $vlesslink6
+
 ====================================================================
+
 Expired On : $exp
+
 ====================================================================
 
 END
 
+
+# ============================================================
+# DISPLAY ACCOUNT
+# ============================================================
+
 clear
+
 echo -e ""
 echo -e "\e[$line═════════════════════════════════\e[m"
 echo -e "\e[$back_text      \e[30m[\e[$box XRAY VLESS WS\e[30m ]\e[1m          \e[m"
 echo -e "\e[$line═════════════════════════════════\e[m"
+
 echo -e "Remarks               : ${user}"
 echo -e "Domain                : ${domain}"
 echo -e "IP/Host               : $MYIP"
+
 echo -e "Port TLS              : ${tls},8443,2083,2096"
 echo -e "Port None TLS         : ${none},8080,2052,2082,2095"
+
 echo -e "User ID               : ${uuid}"
 echo -e "Encryption            : None"
 echo -e "Network               : WebSocket"
+
 echo -e "Path Ws Tls           : $patchtls"
 echo -e "Path Multipath        : /anypath"
 echo -e "Path HttpUpgrade      : $patchupgrade"
 echo -e "Path Xhttp            : $patchxhttp"
+
 echo -e "AllowInsecure         : True/allow"
+
 echo -e "\e[$line═════════════════════════════════\e[m"
+
 echo -e "Script By $creditt"
+
 echo -e "\e[$line═════════════════════════════════\e[m"
+
 echo -e "Link Ws TLS  : ${vlesslink1}"
+
 echo -e "\e[$line═════════════════════════════════\e[m"
+
 echo -e "Link Ws None TLS (Multipath)  : ${vlesslink2}"
+
 echo -e "\e[$line═════════════════════════════════\e[m"
+
 echo -e "Link HttpUpgrade TLS  : ${vlesslink3}"
+
 echo -e "\e[$line═════════════════════════════════\e[m"
+
 echo -e "Link HttpUpgrade None TLS  : ${vlesslink4}"
+
 echo -e "\e[$line═════════════════════════════════\e[m"
+
 echo -e "Link Xhttp TLS  : ${vlesslink5}"
+
 echo -e "\e[$line═════════════════════════════════\e[m"
+
 echo -e "Link Xhttp None TLS  : ${vlesslink6}"
+
 echo -e "\e[$line═════════════════════════════════\e[m"
+
 echo -e "Created   : $harini"
 echo -e "Expired   : $exp"
+
 echo ""
 echo ""
+
 read -n 1 -s -r -p "Press any key to back on menu xray"
+
 exec xraay
 }
 
@@ -1120,113 +1419,277 @@ read -n 1 -s -r -p "Press any key to back on menu xray"
 exec xraay
 }
 
-#RENEW VLESS WS
+# RENEW VLESS WS - FIXED
 function menu9 () {
 clear
-NUMBER_OF_CLIENTS=$(grep -c -E "^#vls " "/usr/local/etc/xray/config.json")
-	if [[ ${NUMBER_OF_CLIENTS} == '0' ]]; then
-		clear
-		echo ""
-		echo "You have no existing clients!"
-		exit 1
-	fi
 
-	clear
-	echo "Renew User Xray Vless Ws"
-	echo "Select the existing client you want to renew"
-	echo " Press CTRL+C to return"
-	echo -e "==============================="
-	grep -E "^#vls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2-3 | nl -s ') '
-	until [[ ${CLIENT_NUMBER} -ge 1 && ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
-		if [[ ${CLIENT_NUMBER} == '1' ]]; then
-			read -rp "Select one client [1]: " CLIENT_NUMBER
-		else
-			read -rp "Select one client [1-${NUMBER_OF_CLIENTS}]: " CLIENT_NUMBER
-		fi
-	done
+CONFIG="/usr/local/etc/xray/config.json"
+NONE="/usr/local/etc/xray/none.json"
+
+# Kira user unik berdasarkan #vls SAHAJA
+NUMBER_OF_CLIENTS=$(grep -E '^#vls ' "$CONFIG" | awk '{print $2}' | sort -u | wc -l)
+
+if [[ ${NUMBER_OF_CLIENTS} == '0' ]]; then
+    clear
+    echo ""
+    echo "You have no existing clients!"
+    exit 1
+fi
+
+clear
+echo "Renew User Xray Vless Ws"
+echo "Select the existing client you want to renew"
+echo " Press CTRL+C to return"
+echo "==============================="
+
+# Paparkan #vls sahaja, 1 nama = 1 user
+grep -E '^#vls ' "$CONFIG" |
+awk '!seen[$2]++ {print $2, $3}' |
+nl -s ') '
+
+echo ""
+
+CLIENT_NUMBER=""
+
+until [[ ${CLIENT_NUMBER} -ge 1 && ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
+
+    if [[ ${NUMBER_OF_CLIENTS} == '1' ]]; then
+        read -rp "Select one client [1]: " CLIENT_NUMBER
+    else
+        read -rp "Select one client [1-${NUMBER_OF_CLIENTS}]: " CLIENT_NUMBER
+    fi
+
+done
+
+# Ambil user berdasarkan nombor unik
+CLIENT_LINE=$(grep -E '^#vls ' "$CONFIG" |
+awk '!seen[$2]++' |
+sed -n "${CLIENT_NUMBER}p")
+
+if [[ -z "$CLIENT_LINE" ]]; then
+    echo "User tidak dijumpai."
+    exit 1
+fi
+
+# Ambil maklumat user
+user=$(echo "$CLIENT_LINE" | awk '{print $2}')
+old_exp=$(echo "$CLIENT_LINE" | awk '{print $3}')
+harini=$(echo "$CLIENT_LINE" | awk '{print $4}')
+uuid=$(echo "$CLIENT_LINE" | awk '{print $5}')
+
+echo ""
+echo "================================="
+echo "Client Name : $user"
+echo "Current Exp : $old_exp"
+echo "UUID        : $uuid"
+echo "================================="
+echo ""
+
 read -p "Expired (days): " masaaktif
-export harini=$(grep -E "^#vls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 4 | sed -n "${CLIENT_NUMBER}"p)
-export uuid=$(grep -E "^#vls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 5 | sed -n "${CLIENT_NUMBER}"p)
-export user=$(grep -E "^#vls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2 | sed -n "${CLIENT_NUMBER}"p)
-export exp=$(grep -E "^#vls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 3 | sed -n "${CLIENT_NUMBER}"p)
-export now=$(date +%Y-%m-%d)
-export d1=$(date -d "$exp" +%s)
-export d2=$(date -d "$now" +%s)
-export exp2=$(( (d1 - d2) / 86400 ))
-export exp3=$(($exp2 + $masaaktif))
-export exp4=`date -d "$exp3 days" +"%Y-%m-%d"`
 
-sed -i "s/#vls $user $exp $harini $uuid/#vls $user $exp4 $harini $uuid/g" /usr/local/etc/xray/config.json
-sed -i "s/#vls $user $exp $harini $uuid/#vls $user $exp4 $harini $uuid/g" /usr/local/etc/xray/none.json
-sed -i "s/#vls-http $user $exp $harini $uuid/#vls $user $exp4 $harini $uuid/g" /usr/local/etc/xray/config.json
-sed -i "s/#vls $user $exp $harini $uuid/#vls $user $exp4 $harini $uuid/g" /usr/local/etc/xray/none.json
-sed -i "s/#vls-xhttp $user $exp $harini $uuid/#vls $user $exp4 $harini $uuid/g" /usr/local/etc/xray/config.json
-sed -i "s/#vls $user $exp $harini $uuid/#vls $user $exp4 $harini $uuid/g" /usr/local/etc/xray/none.json
+if ! [[ "$masaaktif" =~ ^-?[0-9]+$ ]]; then
+    echo "Expired days mesti nombor."
+    exit 1
+fi
+
+# Tarikh sekarang
+now=$(date +%Y-%m-%d)
+
+# Kira baki hari daripada expiry lama
+d1=$(date -d "$old_exp" +%s)
+d2=$(date -d "$now" +%s)
+
+exp2=$(( (d1 - d2) / 86400 ))
+
+# Kalau sudah expired, jangan tambah baki negatif
+if [[ $exp2 -lt 0 ]]; then
+    exp2=0
+fi
+
+# Tambah hari baru
+exp3=$((exp2 + masaaktif))
+
+# Expiry baru
+exp4=$(date -d "$exp3 days" +"%Y-%m-%d")
+
+echo ""
+echo "Old Expiry : $old_exp"
+echo "New Expiry : $exp4"
+echo ""
+
+# ============================================================
+# RENEW #vls
+# ============================================================
+
+sed -i \
+"s|^#vls $user $old_exp $harini $uuid$|#vls $user $exp4 $harini $uuid|" \
+"$CONFIG"
+
+sed -i \
+"s|^#vls $user $old_exp $harini $uuid$|#vls $user $exp4 $harini $uuid|" \
+"$NONE"
+
+
+# ============================================================
+# RENEW #vls-http
+# ============================================================
+
+sed -i \
+"s|^#vls-http $user $old_exp $harini $uuid$|#vls-http $user $exp4 $harini $uuid|" \
+"$CONFIG"
+
+sed -i \
+"s|^#vls-http $user $old_exp $harini $uuid$|#vls-http $user $exp4 $harini $uuid|" \
+"$NONE"
+
+
+# ============================================================
+# RENEW #vls-xhttp
+# ============================================================
+
+sed -i \
+"s|^#vls-xhttp $user $old_exp $harini $uuid$|#vls-xhttp $user $exp4 $harini $uuid|" \
+"$CONFIG"
+
+sed -i \
+"s|^#vls-xhttp $user $old_exp $harini $uuid$|#vls-xhttp $user $exp4 $harini $uuid|" \
+"$NONE"
+
+
+# ============================================================
+# RESTART XRAY
+# ============================================================
 
 systemctl stop xray
 systemctl stop xray@config
+
 systemctl start xray
 systemctl start xray@config
 systemctl restart xray@none
+
 service cron restart
 
 clear
+# ============================================================
+# CHECK RESULT
+# ============================================================
 echo ""
-echo " VLESS WS Account Was Successfully Renewed"
-echo " =========================="
+echo "=============================================="
+echo " VLESS WS ACCOUNT WAS SUCCESSFULLY RENEWED"
+echo "=============================================="
 echo " Client Name : $user"
 echo " Expired On  : $exp4"
-echo " =========================="
+echo "=============================================="
 echo ""
+
 read -n 1 -s -r -p "Press any key to back on menu xray"
+
 exec xraay
 }
 
 # show user vless ws
 function menu10 () {
+
 clear
+
 tls="$(cat ~/log-install.txt | grep -w "Vless Ws Tls" | cut -d: -f2|sed 's/ //g')"
 none="$(cat ~/log-install.txt | grep -w "Vless Ws None Tls" | cut -d: -f2|sed 's/ //g')"
 upgradetls="$(cat ~/log-install.txt | grep -w "Xray HttpUpgrade Tls" | cut -d: -f2|sed 's/ //g')"
 upgradenone="$(cat ~/log-install.txt | grep -w "Xray HttpUpgrade None Tls" | cut -d: -f2|sed 's/ //g')"
 xhttptls="$(cat ~/log-install.txt | grep -w "Xray Vless Xhttp Tls" | cut -d: -f2|sed 's/ //g')"
 xhttpnone="$(cat ~/log-install.txt | grep -w "Xray Vless Xhttp None Tls" | cut -d: -f2|sed 's/ //g')"
-NUMBER_OF_CLIENTS=$(grep -c -E "^#vls " "/usr/local/etc/xray/config.json")
-	if [[ ${NUMBER_OF_CLIENTS} == '0' ]]; then
-		clear
-		echo ""
-		echo "You have no existing clients!"
-		exit 1
-	fi
 
-	clear
-	echo ""
-	echo "SHOW USER XRAY VLESS WS"
-	echo "Select the existing client you want to renew"
-	echo " Press CTRL+C to return"
-	echo -e "==============================="
-	grep -E "^#vls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2-3 | nl -s ') '
-	until [[ ${CLIENT_NUMBER} -ge 1 && ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
-		if [[ ${CLIENT_NUMBER} == '1' ]]; then
-			read -rp "Select one client [1]: " CLIENT_NUMBER
-		else
-			read -rp "Select one client [1-${NUMBER_OF_CLIENTS}]: " CLIENT_NUMBER
-		fi
-	done
+CLIENT_NUMBER=""
+
+# ============================================================
+# USER UTAMA UNIQUE
+#
+# Hanya marker:
+#
+# #vls USER
+#
+# Dikira.
+#
+# #vls-http USER
+# #vls-xhttp USER
+#
+# Tidak dikira.
+# ============================================================
+
+mapfile -t VLESS_USERS < <(
+    awk '
+    /^#vls / {
+        user=$2
+
+        if (!(user in seen)) {
+            seen[user]=1
+            print $0
+        }
+    }
+    ' /usr/local/etc/xray/config.json
+)
+
+NUMBER_OF_CLIENTS=${#VLESS_USERS[@]}
+
+if [[ ${NUMBER_OF_CLIENTS} == '0' ]]; then
+    clear
+    echo ""
+    echo "You have no existing clients!"
+    exit 1
+fi
+
+clear
+echo ""
+echo "SHOW USER XRAY VLESS WS"
+echo "Select the existing client you want to renew"
+echo " Press CTRL+C to return"
+echo -e "==============================="
+
+# ============================================================
+# PAPAR USER UNIQUE
+# ============================================================
+
+for ((i=0; i<NUMBER_OF_CLIENTS; i++)); do
+    echo "${VLESS_USERS[$i]}" | cut -d ' ' -f 2-3
+done | nl -s ') '
+
+until [[ ${CLIENT_NUMBER} =~ ^[0-9]+$ ]] && \
+      [[ ${CLIENT_NUMBER} -ge 1 ]] && \
+      [[ ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
+
+    if [[ ${NUMBER_OF_CLIENTS} == '1' ]]; then
+        read -rp "Select one client [1]: " CLIENT_NUMBER
+    else
+        read -rp "Select one client [1-${NUMBER_OF_CLIENTS}]: " CLIENT_NUMBER
+    fi
+done
+
+# ============================================================
+# AMBIL USER YANG DIPILIH
+# ============================================================
+
+SELECTED="${VLESS_USERS[$((CLIENT_NUMBER-1))]}"
+
+export user="$(echo "$SELECTED" | awk '{print $2}')"
+export harini="$(echo "$SELECTED" | awk '{print $4}')"
+export exp="$(echo "$SELECTED" | awk '{print $3}')"
+export uuid="$(echo "$SELECTED" | awk '{print $5}')"
+
 export patchtls=/vless
 export patchnontls=/vless
 export patchupgrade=/httpupgrade
 export patchxhttp=/xhttp
-export user=$(grep -E "^#vls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2 | sed -n "${CLIENT_NUMBER}"p)
-export harini=$(grep -E "^#vls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 4 | sed -n "${CLIENT_NUMBER}"p)
-export exp=$(grep -E "^#vls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 3 | sed -n "${CLIENT_NUMBER}"p)
-export uuid=$(grep -E "^#vls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 5 | sed -n "${CLIENT_NUMBER}"p)
 
 export vlesslink1="vless://${uuid}@${sts}${domain}:$tls?path=$patchtls&security=tls&encryption=none&type=ws&sni=$sni#${user}_${exp}"
+
 export vlesslink2="vless://${uuid}@${sts}${domain}:$none?path=$patchnontls&encryption=none&host=$sni&type=ws#${user}_${exp}"
+
 export vlesslink3="vless://${uuid}@${sts}${domain}:$upgradetls?path=$patchupgrade&security=tls&encryption=none&type=httpupgrade&sni=$sni#${user}_${exp}"
+
 export vlesslink4="vless://${uuid}@${sts}${domain}:$upgradenone?path=$patchupgrade&encryption=none&host=$sni&type=httpupgrade#${user}_${exp}"
+
 export vlesslink5="vless://${uuid}@${sts}${domain}:$xhttptls?path=$patchxhttp&security=tls&encryption=none&type=xhttp&sni=$sni#${user}_${exp}"
+
 export vlesslink6="vless://${uuid}@${sts}${domain}:$xhttpnone?path=$patchxhttp&encryption=none&host=$sni&type=xhttp#${user}_${exp}"
 
 clear
