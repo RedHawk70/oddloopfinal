@@ -865,66 +865,20 @@ read -p "   Bug SNI/Host (Example : m.facebook.com) : " sni
 
 
 # ============================================================
-# CUSTOM UUID
+# CUSTOM UUID / ID
 # ============================================================
 
-read -p "   Input custom UUID (press Enter for random): " uuid_input
-
-
-normalize_uuid() {
-
-    local u="$1"
-
-    # Buang braces / quotes / spaces
-    u="${u//[\{\}\"]/}"
-    u="${u// /}"
-
-    # UUID tanpa dash
-    if [[ "$u" =~ ^[0-9a-fA-F]{32}$ ]]; then
-
-        echo "${u:0:8}-${u:8:4}-${u:12:4}-${u:16:4}-${u:20:12}" | tr 'A-Z' 'a-z'
-
-        return 0
-    fi
-
-    # UUID dengan dash
-    if [[ "$u" =~ ^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}$ ]]; then
-
-        echo "$u" | tr 'A-Z' 'a-z'
-
-        return 0
-    fi
-
-    return 1
-}
-
+read -p "   Input custom UUID or ID (press Enter for random UUID): " uuid_input
 
 if [[ -z "$uuid_input" ]]; then
-
     uuid="$(cat /proc/sys/kernel/random/uuid)"
-
 else
-
-    if normalized="$(normalize_uuid "$uuid_input")"; then
-
-        uuid="$normalized"
-
-    else
-
-        echo ""
-        echo "UUID yang anda masukkan tidak sah."
-        echo "Akan generate UUID secara automatik."
-        echo ""
-
-        uuid="$(cat /proc/sys/kernel/random/uuid)"
-
-    fi
-
+    uuid="$uuid_input"
 fi
 
 
 # ============================================================
-# CHECK UUID DUPLICATE
+# CHECK UUID / ID DUPLICATE
 # ============================================================
 
 if grep -q "\"id\": \"$uuid\"" /usr/local/etc/xray/config.json \
@@ -932,10 +886,10 @@ if grep -q "\"id\": \"$uuid\"" /usr/local/etc/xray/config.json \
 then
 
     echo ""
-    echo "ERROR: UUID tersebut sudah digunakan."
-    echo "UUID : $uuid"
+    echo "ERROR: UUID / ID tersebut sudah digunakan."
+    echo "UUID / ID : $uuid"
     echo ""
-    echo "Sila gunakan UUID lain."
+    echo "Sila gunakan UUID / ID lain."
     exit 1
 fi
 
