@@ -67,7 +67,7 @@ certifacate=$(((d1 - d2) / 86400))
 # TOTAL ACC CREATE VMESS WS
 vmess=$(grep -c -E "^#vms " "/usr/local/etc/xray/vmess.json")
 # TOTAL ACC CREATE VLESS WS
-vless=$(grep -E '^#vls ' "/usr/local/etc/xray/config.json" | awk '{print tolower($2)}' | sort -u | wc -l)
+vless=$(grep -c -E "^#vls " "/usr/local/etc/xray/config.json")
 # TOTAL ACC CREATE  VLESS TCP XTLS
 xtls=$(grep -c -E "^#vxtls " "/usr/local/etc/xray/config.json")
 # TOTAL ACC CREATE  TROJAN
