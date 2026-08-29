@@ -84,6 +84,9 @@ apt install htop -y
 # install git
 apt install git -y
 
+# install cron
+apt install cron -y
+
 apt install irqbalance -y
 systemctl enable --now irqbalance
 
@@ -414,7 +417,7 @@ chmod +x port-ssl
 chmod +x port-squid
 chmod +x port-websocket
 chmod +x wbmn
-chmod +x xp
+chmod +x xp-xray
 chmod +x xp2
 chmod +x kernel-updt
 chmod +x user-list
@@ -460,7 +463,7 @@ sed -i 's/\r$//' /usr/bin/cek-xray
 install-figlet
 harden-kernel
 echo "0 1 * * * root delete" >> /etc/crontab
-echo "0 2 * * * root xp" >> /etc/crontab
+echo "0 2 * * * root xp-xray" >> /etc/crontab
 echo "0 5 * * * root reboot" >> /etc/crontab
 echo "0 14 * * * root backup" >> /etc/crontab
 echo "0 23 * * * root clear-log" >> /etc/crontab
@@ -468,7 +471,7 @@ echo "0 5 * * * root clear-log" >> /etc/crontab
 echo "0 12 * * * root clear-log" >> /etc/crontab
 echo "0 18 * * * root clear-log" >> /etc/crontab
 echo "0 1 * * * root backup" >> /etc/crontab
-echo "0 3 * * * root /usr/bin/xp" >> /etc/crontab
+echo "0 3 * * * root /usr/bin/xp-xray" >> /etc/crontab
 echo "0 4 * * * root /usr/bin/delete" >> /etc/crontab
 echo "0 9 * * * root /usr/bin/clear-log" >> /etc/crontab
 #echo "10 23 * * * root /usr/bin/backup" >> /etc/crontab
@@ -486,6 +489,8 @@ apt autoremove -y
 # // finishing
 cd
 chown -R www-data:www-data /home/vps/public_html
+systemctl enable cron
+systemctl start cron
 systemctl restart nginx
 systemctl restart openvpn
 systemctl restart cron
