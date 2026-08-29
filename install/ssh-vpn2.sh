@@ -343,6 +343,7 @@ wget -O trial "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/ad
 wget -O del-ssh "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/delete-user/del-ssh.sh"
 wget -O member "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/member.sh"
 wget -O delete "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/delete-user/delete.sh"
+wget -O xp-xray "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/delete-user/xp-xray.sh"
 wget -O cek-ssh "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/cek-user/cek-ssh.sh"
 wget -O cek-xray "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/cek-user/cek-xray.sh"
 wget -O restart "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/restart.sh"
@@ -430,6 +431,7 @@ chmod +x swap
 chmod +x check-sc
 chmod +x ssh2
 chmod +x autoreboot
+chmod +x xp-xray
 chmod +x bbr
 chmod +x port-ohp
 chmod +x socks-manager
