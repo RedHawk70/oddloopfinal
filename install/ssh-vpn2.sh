@@ -362,7 +362,6 @@ wget -O port-ssl "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main
 wget -O port-squid "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/change-port/port-squid.sh"
 wget -O port-websocket "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/change-port/port-websocket.sh"
 wget -O wbmn "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/webmin.sh"
-wget -O xp "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/xp.sh"
 wget -O xp2 "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/xp2.sh"
 wget -O kernel-updt "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/kernel.sh"
 wget -O harden-kernel "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/more-option/harden-kernel.sh"
