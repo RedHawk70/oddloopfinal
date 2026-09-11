@@ -54,63 +54,67 @@ none="$(cat ~/log-install.txt | grep -w "Vmess Ws None Tls" | cut -d: -f2|sed 's
 echo -e   "  \e[$line═══════════════════════════════════════════════════════\e[m"
 echo -e   "  \e[$back_text           \e[30m[\e[$box CREATE USER XRAY VMESS WS TLS\e[30m ]\e[1m           \e[m"
 echo -e   "  \e[$line═══════════════════════════════════════════════════════\e[m"
-until [[ $user =~ ^[a-zA-Z0-9_]+$ && ${CLIENT_EXISTS} == '0' ]]; do
-		read -rp "   Username: " -e user
-		CLIENT_EXISTS=$(grep -w $user /usr/local/etc/xray/config.json | wc -l)
 
-		if [[ ${CLIENT_EXISTS} == '1' ]]; then
-			echo ""
-			echo "A client with the specified name was already created, please choose another name."
-			exit 1
-		fi
-	done
+# ============================================================
+# CHECK USERNAME
+# ============================================================
+until [[ $user =~ ^[a-zA-Z0-9_]+$ && ${CLIENT_EXISTS} == '0' ]]; do
+    read -rp "   Username: " -e user
+    CLIENT_EXISTS=$(grep -w "$user" /usr/local/etc/xray/config.json | wc -l)
+
+    if [[ ${CLIENT_EXISTS} == '1' ]]; then
+        echo ""
+        echo "A client with the specified name was already created, please choose another name."
+        exit 1
+    fi
+done
+
 export patchtls=/vmess
 export patchnontls=/vmess
-export uuid=$(cat /proc/sys/kernel/random/uuid)
 
+# ============================================================
+# BUG ADDRESS / SNI
+# ============================================================
 read -p "   Bug Address (Example: www.google.com) : " address
 read -p "   Bug SNI/Host (Example : m.facebook.com) : " sni
-read -p "   Input custom UUID (press Enter for random): " uuid_input
+
+# ============================================================
+# CUSTOM UUID / ID
+# ============================================================
+read -p "   Input custom UUID or ID (press Enter for random UUID): " uuid_input
 read -p "   Expired (days) : " masaaktif
+
 bug_addr=${address}.
 bug_addr2=$address
 if [[ $address == "" ]]; then
-sts=$bug_addr2
+    sts=$bug_addr2
 else
-sts=$bug_addr
+    sts=$bug_addr
 fi
-# normalize/validate function
-normalize_uuid() {
-  local u="$1"
-  # buang braces / quotes / spaces
-  u="${u//[\{\}\"]/}"
-  u="${u// /}"
-  # 32 hex tanpa dash -> tambah dash
-  if [[ "$u" =~ ^[0-9a-fA-F]{32}$ ]]; then
-    echo "${u:0:8}-${u:8:4}-${u:12:4}-${u:16:4}-${u:20:12}" | tr 'A-Z' 'a-z'
-    return 0
-  fi
-  # sudah berbentuk dashed uuid
-  if [[ "$u" =~ ^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}$ ]]; then
-    echo "$u" | tr 'A-Z' 'a-z'
-    return 0
-  fi
-  return 1
-}
 
+# terima apa-apa custom ID, kalau kosong generate random UUID
 if [[ -z "$uuid_input" ]]; then
-  uuid="$(cat /proc/sys/kernel/random/uuid)"
-else
-  if normalized="$(normalize_uuid "$uuid_input")"; then
-    uuid="$normalized"
-  else
-    echo "UUID yang anda masukkan tidak sah. Akan generate automatik." >&2
     uuid="$(cat /proc/sys/kernel/random/uuid)"
-  fi
+else
+    uuid="$uuid_input"
 fi
 
-export exp=`date -d "$masaaktif days" +"%Y-%m-%d"`
-export harini=`date -d "0 days" +"%Y-%m-%d"`
+# ============================================================
+# CHECK UUID / ID DUPLICATE
+# ============================================================
+if grep -q "\"id\": \"$uuid\"" /usr/local/etc/xray/config.json \
+   || grep -q "\"id\": \"$uuid\"" /usr/local/etc/xray/none.json
+then
+    echo ""
+    echo "ERROR: UUID / ID tersebut sudah digunakan."
+    echo "UUID / ID : $uuid"
+    echo ""
+    echo "Sila gunakan UUID / ID lain."
+    exit 1
+fi
+
+export exp=$(date -d "$masaaktif days" +"%Y-%m-%d")
+export harini=$(date -d "0 days" +"%Y-%m-%d")
 
 sed -i '/#xray-vmess-tls$/a\#vms '"$user $exp $harini $uuid"'\
 },{"id": "'""$uuid""'","alterId": '"0"',"email": "'""$user""'"' /usr/local/etc/xray/config.json
@@ -1694,60 +1698,63 @@ xtls="$(cat ~/log-install.txt | grep -w "Xray Vless Xtls Vision" | cut -d: -f2|s
 echo -e   "  \e[$line═══════════════════════════════════════════════════════\e[m"
 echo -e   "  \e[$back_text           \e[30m[\e[$box CREATE USER XRAY XTLS VISION\e[30m ]\e[1m            \e[m"
 echo -e   "  \e[$line═══════════════════════════════════════════════════════\e[m"
-until [[ $user =~ ^[a-zA-Z0-9_]+$ && ${CLIENT_EXISTS} == '0' ]]; do
-		read -rp "   Username: " -e user
-		CLIENT_EXISTS=$(grep -w $user /usr/local/etc/xray/config.json | wc -l)
 
-		if [[ ${CLIENT_EXISTS} == '1' ]]; then
-			echo ""
-			echo "A client with the specified name was already created, please choose another name."
-			exit 1
-		fi
-	done
-export uuid=$(cat /proc/sys/kernel/random/uuid)
+# ============================================================
+# CHECK USERNAME
+# ============================================================
+until [[ $user =~ ^[a-zA-Z0-9_]+$ && ${CLIENT_EXISTS} == '0' ]]; do
+    read -rp "   Username: " -e user
+    CLIENT_EXISTS=$(grep -w "$user" /usr/local/etc/xray/config.json | wc -l)
+
+    if [[ ${CLIENT_EXISTS} == '1' ]]; then
+        echo ""
+        echo "A client with the specified name was already created, please choose another name."
+        exit 1
+    fi
+done
+
+# ============================================================
+# BUG ADDRESS / SNI
+# ============================================================
 read -p "   Bug Address (Example: www.google.com) : " address
 read -p "   Bug SNI/Host (Example : m.facebook.com) : " sni
-read -p "   Input custom UUID (press Enter for random): " uuid_input
+
+# ============================================================
+# CUSTOM UUID / ID
+# ============================================================
+read -p "   Input custom UUID or ID (press Enter for random UUID): " uuid_input
 read -p "   Expired (days) : " masaaktif
+
 bug_addr=${address}.
 bug_addr2=$address
 if [[ $address == "" ]]; then
-sts=$bug_addr2
+    sts=$bug_addr2
 else
-sts=$bug_addr
+    sts=$bug_addr
 fi
-# normalize/validate function
-normalize_uuid() {
-  local u="$1"
-  # buang braces / quotes / spaces
-  u="${u//[\{\}\"]/}"
-  u="${u// /}"
-  # 32 hex tanpa dash -> tambah dash
-  if [[ "$u" =~ ^[0-9a-fA-F]{32}$ ]]; then
-    echo "${u:0:8}-${u:8:4}-${u:12:4}-${u:16:4}-${u:20:12}" | tr 'A-Z' 'a-z'
-    return 0
-  fi
-  # sudah berbentuk dashed uuid
-  if [[ "$u" =~ ^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}$ ]]; then
-    echo "$u" | tr 'A-Z' 'a-z'
-    return 0
-  fi
-  return 1
-}
 
+# terima apa-apa custom ID, kalau kosong generate random UUID
 if [[ -z "$uuid_input" ]]; then
-  uuid="$(cat /proc/sys/kernel/random/uuid)"
-else
-  if normalized="$(normalize_uuid "$uuid_input")"; then
-    uuid="$normalized"
-  else
-    echo "UUID yang anda masukkan tidak sah. Akan generate automatik." >&2
     uuid="$(cat /proc/sys/kernel/random/uuid)"
-  fi
+else
+    uuid="$uuid_input"
 fi
 
-export exp=`date -d "$masaaktif days" +"%Y-%m-%d"`
-export harini=`date -d "0 days" +"%Y-%m-%d"`
+# ============================================================
+# CHECK UUID / ID DUPLICATE
+# ============================================================
+if grep -q "\"id\": \"$uuid\"" /usr/local/etc/xray/config.json
+then
+    echo ""
+    echo "ERROR: UUID / ID tersebut sudah digunakan."
+    echo "UUID / ID : $uuid"
+    echo ""
+    echo "Sila gunakan UUID / ID lain."
+    exit 1
+fi
+
+export exp=$(date -d "$masaaktif days" +"%Y-%m-%d")
+export harini=$(date -d "0 days" +"%Y-%m-%d")
 
 sed -i '/#xray-vless-xtls-rprx-vision$/a\#vxtls '"$user $exp $harini $uuid"'\
 },{"id": "'""$uuid""'","flow": "'""xtls-rprx-vision""'","level": '"0"',"email": "'""$user""'"' /usr/local/etc/xray/config.json
