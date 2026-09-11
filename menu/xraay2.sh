@@ -801,6 +801,206 @@ exec xraay
 }
 
 # ADD USER VLESS WS
+# ============ CONFIG LIST FEATURE ============
+CONFIGLIST_DIR="/etc/xray/configlist"
+
+config_provider_color () {
+	case "$1" in
+		1) printf '\033[38;5;208m';;
+		2) printf '\033[38;5;93m';;
+		3) printf '\033[38;5;226m';;
+		4) printf '\033[38;5;33m';;
+		5) printf '\033[38;5;196m';;
+		6) printf '\033[38;5;51m';;
+		7) printf '\033[38;5;46m';;
+		8) printf '\033[38;5;197m';;
+		9) printf '\033[38;5;44m';;
+		10) printf '\033[38;5;160m';;
+	esac
+}
+
+config_provider_name () {
+	case "$1" in
+		1) echo "umobile";;
+		2) echo "yes";;
+		3) echo "digi";;
+		4) echo "celcom";;
+		5) echo "maxis";;
+		6) echo "eastel";;
+		7) echo "yoodo";;
+		8) echo "tunetalk";;
+		9) echo "tonewow";;
+		10) echo "redone";;
+	esac
+}
+
+config_default_path () {
+	case "$1" in
+		1|2) echo "/vless";;
+		3|4) echo "/httpupgrade";;
+		5|6) echo "/xhttp";;
+	esac
+}
+
+config_build_link () {
+	local proto="$1" addr="$2" path="$3" extra="$4"
+	case "$proto" in
+		1) echo "vless://${uuid}@${addr}:${tls}?path=${path}&security=tls&encryption=none&type=ws&sni=${extra}#${user}_${exp}";;
+		2) echo "vless://${uuid}@${addr}:${none}?path=${path}&encryption=none&host=${extra}&type=ws#${user}_${exp}";;
+		3) echo "vless://${uuid}@${addr}:${upgradetls}?path=${path}&security=tls&encryption=none&type=httpupgrade&sni=${extra}#${user}_${exp}";;
+		4) echo "vless://${uuid}@${addr}:${upgradenone}?path=${path}&encryption=none&host=${extra}&type=httpupgrade#${user}_${exp}";;
+		5) echo "vless://${uuid}@${addr}:${xhttptls}?path=${path}&security=tls&encryption=none&type=xhttp&sni=${extra}#${user}_${exp}";;
+		6) echo "vless://${uuid}@${addr}:${xhttpnone}?path=${path}&encryption=none&host=${extra}&type=xhttp#${user}_${exp}";;
+	esac
+}
+
+config_edit () {
+	local pfile="$1"
+	local cname proto addr cpath dpath extra link
+	echo ""
+	read -rp "   Nama config: " cname
+	if [[ -z "$cname" ]]; then echo "   Nama kosong, dibatalkan."; sleep 2; return; fi
+	echo ""
+	echo "   Pilih protocol:"
+	echo "   1) Ws TLS"
+	echo "   2) Ws None TLS (Multipath)"
+	echo "   3) HttpUpgrade TLS"
+	echo "   4) HttpUpgrade None TLS"
+	echo "   5) Xhttp TLS"
+	echo "   6) Xhttp None TLS"
+	echo ""
+	read -rp "   Protocol [1-6]: " proto
+	if ! [[ "$proto" =~ ^[1-6]$ ]]; then echo "   Protocol tidak sah."; sleep 2; return; fi
+	read -rp "   Address (Enter untuk ${domain}): " addr
+	[[ -z "$addr" ]] && addr="${domain}"
+	dpath="$(config_default_path "$proto")"
+	read -rp "   Path (Enter untuk ${dpath}): " cpath
+	[[ -z "$cpath" ]] && cpath="${dpath}"
+	if [[ "$proto" == "1" || "$proto" == "3" || "$proto" == "5" ]]; then
+		read -rp "   SNI: " extra
+	else
+		read -rp "   Host: " extra
+	fi
+	link="$(config_build_link "$proto" "$addr" "$cpath" "$extra")"
+	mkdir -p "$CONFIGLIST_DIR"
+	printf '%s\t%s\n' "$cname" "$link" >> "$pfile"
+	echo ""
+	echo "   Config disimpan:"
+	echo "   ══════════════════════════════════"
+	echo "   Link ${cname}  : ${link}"
+	echo "   ══════════════════════════════════"
+	echo ""
+	read -n 1 -s -r -p "   Press any key to continue"
+}
+
+config_list () {
+	local pfile="$1"
+	local cname link
+	clear
+	echo ""
+	if [[ ! -s "$pfile" ]]; then
+		echo "   Tiada config tersimpan."
+		echo ""
+		read -n 1 -s -r -p "   Press any key to continue"
+		return
+	fi
+	while IFS=$'\t' read -r cname link; do
+		[[ -z "$cname" ]] && continue
+		echo "═════════════════════════════════"
+		echo "Link ${cname}  : ${link}"
+	done < "$pfile"
+	echo "═════════════════════════════════"
+	echo ""
+	read -n 1 -s -r -p "   Press any key to continue"
+}
+
+config_delete () {
+	local pfile="$1"
+	local dnum total cname
+	clear
+	echo ""
+	if [[ ! -s "$pfile" ]]; then
+		echo "   Tiada config tersimpan."
+		echo ""
+		read -n 1 -s -r -p "   Press any key to continue"
+		return
+	fi
+	echo "   Senarai config:"
+	cut -f1 "$pfile" | nl -s ') ' -w2
+	echo ""
+	total=$(wc -l < "$pfile")
+	read -rp "   Nombor config untuk delete: " dnum
+	[[ -z "$dnum" ]] && return
+	if ! [[ "$dnum" =~ ^[0-9]+$ ]] || [[ "$dnum" -lt 1 ]] || [[ "$dnum" -gt "$total" ]]; then
+		echo ""
+		echo "   Nombor tidak sah."
+		echo ""
+		read -n 1 -s -r -p "   Press any key to continue"
+		return
+	fi
+	cname=$(sed -n "${dnum}p" "$pfile" | cut -f1)
+	sed -i "${dnum}d" "$pfile"
+	echo ""
+	echo "   Config '$cname' telah dipadam."
+	echo ""
+	read -n 1 -s -r -p "   Press any key to continue"
+}
+
+config_provider_submenu () {
+	local pnum="$1" provider pfile sub
+	local R=$'\e[0m'
+	provider="$(config_provider_name "$pnum")"
+	pfile="${CONFIGLIST_DIR}/${provider}.conf"
+	mkdir -p "$CONFIGLIST_DIR"
+	while true; do
+		clear
+		echo ""
+		echo "   Provider: $(config_provider_color "$pnum")${provider^}${R}"
+		echo "   a) Edit config"
+		echo "   b) List config"
+		echo "   c) Delete config"
+		echo "   x) Back"
+		echo ""
+		read -rp "   Pilih [a/b/c/x]: " sub
+		case "$sub" in
+			a|A) config_edit "$pfile";;
+			b|B) config_list "$pfile";;
+			c|C) config_delete "$pfile";;
+			x|X) break;;
+			*) ;;
+		esac
+	done
+}
+
+config_list_menu () {
+	local prov
+	local R=$'\e[0m'
+	while true; do
+		clear
+		echo ""
+		echo "   CONFIG LIST"
+		echo "   1. $(config_provider_color 1)Umobile${R}"
+		echo "   2. $(config_provider_color 2)Yes${R}"
+		echo "   3. $(config_provider_color 3)Digi${R}"
+		echo "   4. $(config_provider_color 4)Celcom${R}"
+		echo "   5. $(config_provider_color 5)Maxis${R}"
+		echo "   6. $(config_provider_color 6)Eastel${R}"
+		echo "   7. $(config_provider_color 7)Yoodo${R}"
+		echo "   8. $(config_provider_color 8)Tunetalk${R}"
+		echo "   9. $(config_provider_color 9)Tonewow${R}"
+		echo "   10. $(config_provider_color 10)Redone${R}"
+		echo "   x. Back to menu xray"
+		echo ""
+		read -rp "   Pilih [1-10, x]: " prov
+		case "$prov" in
+			1|2|3|4|5|6|7|8|9|10) config_provider_submenu "$prov";;
+			x|X) break;;
+			*) ;;
+		esac
+	done
+}
+# ============ END CONFIG LIST FEATURE ============
+
 function menu6 () {
 clear
 
@@ -1232,7 +1432,10 @@ echo -e "Expired   : $exp"
 echo ""
 echo ""
 
-read -n 1 -s -r -p "Press any key to back on menu xray"
+read -rsn1 -p "Press any key to back on menu xray or ctrl+x to see config list" keypress
+if [[ "$keypress" == $'\x18' ]]; then
+config_list_menu
+fi
 
 exec xraay
 }
