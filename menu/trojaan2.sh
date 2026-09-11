@@ -150,7 +150,11 @@ echo -e "Created : $harini"
 echo -e "Expired : $exp"
 echo ""
 echo ""
-read -n 1 -s -r -p "Press any key to back on menu Trojan"
+read -rsn1 -p "Press any key to back on menu Trojan or ctrl+x to see config list" keypress
+if [[ "$keypress" == $'\x18' ]]; then
+CFGMODE="trojan"
+config_list_menu
+fi
 trojaan
 }
 
@@ -403,9 +407,250 @@ echo -e "Created : $harini"
 echo -e "Expired : $exp"
 echo ""
 echo ""
-read -n 1 -s -r -p "Press any key to back on menu Trojan"
+read -rsn1 -p "Press any key to back on menu Trojan or ctrl+x to see config list" keypress
+if [[ "$keypress" == $'\x18' ]]; then
+CFGMODE="trojan"
+config_list_menu
+fi
 trojaan
 }
+
+# ============ CONFIG LIST FEATURE ============
+CONFIGLIST_DIR="/etc/xray/configlist"
+
+config_provider_color () {
+	case "$1" in
+		1) printf '\033[38;5;208m';;
+		2) printf '\033[38;5;93m';;
+		3) printf '\033[38;5;226m';;
+		4) printf '\033[38;5;33m';;
+		5) printf '\033[38;5;196m';;
+		6) printf '\033[38;5;51m';;
+		7) printf '\033[38;5;46m';;
+		8) printf '\033[38;5;197m';;
+		9) printf '\033[38;5;44m';;
+		10) printf '\033[38;5;160m';;
+	esac
+}
+
+config_provider_name () {
+	case "$1" in
+		1) echo "umobile";;
+		2) echo "yes";;
+		3) echo "digi";;
+		4) echo "celcom";;
+		5) echo "maxis";;
+		6) echo "eastel";;
+		7) echo "yoodo";;
+		8) echo "tunetalk";;
+		9) echo "tonewow";;
+		10) echo "redone";;
+	esac
+}
+
+config_default_path () {
+	case "$1" in
+		1) echo "/trojanwstls";;
+		2) echo "/trojanwsntls";;
+	esac
+}
+
+config_build_link () {
+	local mode="$1" proto="$2" addr="$3" path="$4" extra="$5"
+	case "$proto" in
+		1) echo "trojan://${user}@${addr}:${trws}?path=${path}&security=tls&host=bug.com&type=ws&sni=${extra}#${user}";;
+		2) echo "trojan://${user}@${addr}:${trnone}?path=${path}&security=none&host=${extra}&type=ws#${user}";;
+	esac
+}
+
+config_edit () {
+	local pfile="$1"
+	local cname proto addr cpath dpath extra link mode
+	mode="${CFGMODE:-trojan}"
+	echo ""
+	read -rp "   Nama config: " cname
+	if [[ -z "$cname" ]]; then echo "   Nama kosong, dibatalkan."; sleep 2; return; fi
+	echo ""
+	echo "   Pilih protocol:"
+	echo "   1) TLS"
+	echo "   2) NTLS"
+	echo ""
+	read -rp "   Protocol [1-2]: " proto
+	if ! [[ "$proto" =~ ^[1-2]$ ]]; then echo "   Protocol tidak sah."; sleep 2; return; fi
+	read -rp "   Address (Enter untuk ${domain}): " addr
+	[[ -z "$addr" ]] && addr="${domain}"
+	dpath="$(config_default_path "$proto")"
+	read -rp "   Path (Enter untuk ${dpath}): " cpath
+	[[ -z "$cpath" ]] && cpath="${dpath}"
+	if (( proto % 2 == 1 )); then
+		read -rp "   SNI: " extra
+	else
+		read -rp "   Host: " extra
+	fi
+	link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra")"
+	mkdir -p "$CONFIGLIST_DIR"
+	# Simpan sebagai template (tanpa user) supaya boleh guna semula untuk semua user
+	printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$cname" "$mode" "$proto" "$addr" "$cpath" "$extra" >> "$pfile"
+	echo ""
+	echo "   Config disimpan:"
+	echo "   ════════════════════════════════════"
+	echo "   Link ${cname}  : ${link}"
+	echo "   ════════════════════════════════════"
+	echo ""
+	read -n 1 -s -r -p "   Press any key to continue"
+}
+
+config_list () {
+	local pfile="$1"
+	local cname mode proto addr cpath extra link found curmode
+	clear
+	echo ""
+	if [[ -z "$user" ]]; then
+		echo "   Tiada user semasa. Sila create user dahulu."
+		echo ""
+		read -n 1 -s -r -p "   Press any key to continue"
+		return
+	fi
+	if [[ ! -s "$pfile" ]]; then
+		echo "   Tiada config tersimpan."
+		echo ""
+		read -n 1 -s -r -p "   Press any key to continue"
+		return
+	fi
+	curmode="${CFGMODE:-trojan}"
+	found=0
+	while IFS=$'\t' read -r cname mode proto addr cpath extra; do
+		[[ -z "$cname" ]] && continue
+		# Sokong format lama tanpa medan mode: anggap trojan.
+		# Abaikan template mod lain (vmess/vless/xtls) yang berkongsi folder config.
+		if [[ "$mode" != "trojan" && "$mode" != "vmess" && "$mode" != "vless" && "$mode" != "xtls" ]]; then
+			extra="$cpath"; cpath="$addr"; addr="$proto"; proto="$mode"; mode="trojan"
+		fi
+		[[ "$mode" != "$curmode" ]] && continue
+		# Bina semula link ikut user semasa
+		link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra")"
+		echo "══════════════════════════════════"
+		echo "Link ${cname}  : ${link}"
+		found=1
+	done < "$pfile"
+	echo "══════════════════════════════════"
+	if [[ "$found" == "0" ]]; then
+		echo "   Tiada config tersimpan."
+		echo "══════════════════════════════════"
+	fi
+	echo ""
+	read -n 1 -s -r -p "   Press any key to continue"
+}
+
+config_delete () {
+	local pfile="$1"
+	local dnum cname mode proto addr cpath extra curmode lineno i realline
+	local -a map names
+	clear
+	echo ""
+	if [[ ! -s "$pfile" ]]; then
+		echo "   Tiada config tersimpan."
+		echo ""
+		read -n 1 -s -r -p "   Press any key to continue"
+		return
+	fi
+	curmode="${CFGMODE:-trojan}"
+	lineno=0
+	map=()
+	names=()
+	while IFS=$'\t' read -r cname mode proto addr cpath extra; do
+		lineno=$((lineno+1))
+		[[ -z "$cname" ]] && continue
+		if [[ "$mode" != "trojan" && "$mode" != "vmess" && "$mode" != "vless" && "$mode" != "xtls" ]]; then
+			mode="trojan"
+		fi
+		[[ "$mode" != "$curmode" ]] && continue
+		map+=("$lineno")
+		names+=("$cname")
+	done < "$pfile"
+	if [[ ${#map[@]} -eq 0 ]]; then
+		echo "   Tiada config tersimpan."
+		echo ""
+		read -n 1 -s -r -p "   Press any key to continue"
+		return
+	fi
+	echo "   Senarai config:"
+	for i in "${!names[@]}"; do
+		printf '%2d) %s\n' "$((i+1))" "${names[$i]}"
+	done
+	echo ""
+	read -rp "   Nombor config untuk delete: " dnum
+	[[ -z "$dnum" ]] && return
+	if ! [[ "$dnum" =~ ^[0-9]+$ ]] || [[ "$dnum" -lt 1 ]] || [[ "$dnum" -gt ${#map[@]} ]]; then
+		echo ""
+		echo "   Nombor tidak sah."
+		echo ""
+		read -n 1 -s -r -p "   Press any key to continue"
+		return
+	fi
+	realline="${map[$((dnum-1))]}"
+	cname="${names[$((dnum-1))]}"
+	sed -i "${realline}d" "$pfile"
+	echo ""
+	echo "   Config '$cname' telah dipadam."
+	echo ""
+	read -n 1 -s -r -p "   Press any key to continue"
+}
+
+config_provider_submenu () {
+	local pnum="$1" provider pfile sub
+	local R=$'\e[0m'
+	provider="$(config_provider_name "$pnum")"
+	pfile="${CONFIGLIST_DIR}/${provider}.conf"
+	mkdir -p "$CONFIGLIST_DIR"
+	while true; do
+		clear
+		echo ""
+		echo "   Provider: $(config_provider_color "$pnum")${provider^}${R}"
+		echo "   a) Edit config"
+		echo "   b) List config"
+		echo "   c) Delete config"
+		echo "   x) Back"
+		echo ""
+		read -rp "   Pilih [a/b/c/x]: " sub
+		case "$sub" in
+			a|A) config_edit "$pfile";;
+			b|B) config_list "$pfile";;
+			c|C) config_delete "$pfile";;
+			x|X) break;;
+			*) ;;
+		esac
+	done
+}
+
+config_list_menu () {
+	local prov
+	local R=$'\e[0m'
+	while true; do
+		clear
+		echo ""
+		echo "   CONFIG LIST"
+		echo "   1. $(config_provider_color 1)Umobile${R}"
+		echo "   2. $(config_provider_color 2)Yes${R}"
+		echo "   3. $(config_provider_color 3)Digi${R}"
+		echo "   4. $(config_provider_color 4)Celcom${R}"
+		echo "   5. $(config_provider_color 5)Maxis${R}"
+		echo "   6. $(config_provider_color 6)Eastel${R}"
+		echo "   7. $(config_provider_color 7)Yoodo${R}"
+		echo "   8. $(config_provider_color 8)Tunetalk${R}"
+		echo "   9. $(config_provider_color 9)Tonewow${R}"
+		echo "   10. $(config_provider_color 10)Redone${R}"
+		echo "   x. Back to menu trojan"
+		echo ""
+		read -rp "   Pilih [1-10, x]: " prov
+		case "$prov" in
+			1|2|3|4|5|6|7|8|9|10) config_provider_submenu "$prov";;
+			x|X) break;;
+			*) ;;
+		esac
+	done
+}
+# ============ END CONFIG LIST FEATURE ============
 
 # MENU TROJAN
 clear
