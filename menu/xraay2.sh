@@ -611,12 +611,30 @@ NUMBER_OF_CLIENTS=$(grep -c -E "^#vms " "/usr/local/etc/xray/config.json")
 	echo " Press CTRL+C to return"
 	echo -e "==============================="
 	grep -E "^#vms " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2-3 | nl -s ') '
-	until [[ ${CLIENT_NUMBER} -ge 1 && ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
-		if [[ ${CLIENT_NUMBER} == '1' ]]; then
-			read -rp "Select one client [1]: " CLIENT_NUMBER
+	until [[ ${CLIENT_NUMBER} =~ ^[0-9]+$ ]] && \
+	      [[ ${CLIENT_NUMBER} -ge 1 ]] && \
+	      [[ ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
+		if [[ ${NUMBER_OF_CLIENTS} == '1' ]]; then
+			read -rp "Select one client [1] (or 's' to search): " CLIENT_NUMBER
 		else
-			read -rp "Select one client [1-${NUMBER_OF_CLIENTS}]: " CLIENT_NUMBER
+			read -rp "Select one client [1-${NUMBER_OF_CLIENTS}] (or 's' to search): " CLIENT_NUMBER
 		fi
+
+		# ---------- SEARCH MODE ----------
+		if [[ ${CLIENT_NUMBER} == 's' || ${CLIENT_NUMBER} == 'S' ]]; then
+			read -rp "   Masukkan username yang nak dicari: " SEARCH_USER
+			SEARCH_NUM=$(grep -E "^#vms " "/usr/local/etc/xray/config.json" | awk -v u="$SEARCH_USER" '$2==u{print NR; exit}')
+			if [[ -z "$SEARCH_NUM" ]]; then
+				echo ""
+				echo "User not found : $SEARCH_USER"
+				sleep 3
+				menu5
+			else
+				CLIENT_NUMBER="$SEARCH_NUM"
+				break
+			fi
+		fi
+		# ---------- END SEARCH MODE ----------
 	done
 export patchtls=/vmess
 export patchnontls=/vmess
@@ -1561,30 +1579,20 @@ CLIENT_NUMBER=""
 
 # ============================================================
 # USER UTAMA UNIQUE
-#
-# Hanya marker:
-#
-# #vls USER
-#
-# Dikira.
-#
-# #vls-http USER
-# #vls-xhttp USER
-#
-# Tidak dikira.
+# Hanya marker: #vls USER  dikira.
+# #vls-http USER / #vls-xhttp USER  tidak dikira.
 # ============================================================
 
 mapfile -t VLESS_USERS < <(
-    awk '
-    /^#vls / {
-        user=$2
-
-        if (!(user in seen)) {
-            seen[user]=1
-            print $0
-        }
+awk '
+/^#vls / {
+    user=$2
+    if (!(user in seen)) {
+        seen[user]=1
+        print $0
     }
-    ' /usr/local/etc/xray/config.json
+}
+' /usr/local/etc/xray/config.json
 )
 
 NUMBER_OF_CLIENTS=${#VLESS_USERS[@]}
@@ -1611,15 +1619,46 @@ for ((i=0; i<NUMBER_OF_CLIENTS; i++)); do
     echo "${VLESS_USERS[$i]}" | cut -d ' ' -f 2-3
 done | nl -s ') '
 
+# ============================================================
+# PILIH CLIENT (nombor) ATAU SEARCH (tekan 's')
+# ============================================================
+
 until [[ ${CLIENT_NUMBER} =~ ^[0-9]+$ ]] && \
       [[ ${CLIENT_NUMBER} -ge 1 ]] && \
       [[ ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
 
     if [[ ${NUMBER_OF_CLIENTS} == '1' ]]; then
-        read -rp "Select one client [1]: " CLIENT_NUMBER
+        read -rp "Select one client [1] (or 's' to search): " CLIENT_NUMBER
     else
-        read -rp "Select one client [1-${NUMBER_OF_CLIENTS}]: " CLIENT_NUMBER
+        read -rp "Select one client [1-${NUMBER_OF_CLIENTS}] (or 's' to search): " CLIENT_NUMBER
     fi
+
+    # ---------- SEARCH MODE ----------
+    if [[ ${CLIENT_NUMBER} == 's' || ${CLIENT_NUMBER} == 'S' ]]; then
+        read -rp "   Masukkan username yang nak dicari: " SEARCH_USER
+
+        FOUND_INDEX=""
+        for ((i=0; i<NUMBER_OF_CLIENTS; i++)); do
+            u="$(echo "${VLESS_USERS[$i]}" | awk '{print $2}')"
+            if [[ "$u" == "$SEARCH_USER" ]]; then
+                FOUND_INDEX=$i
+                break
+            fi
+        done
+
+        if [[ -z "$FOUND_INDEX" ]]; then
+            echo ""
+            echo "User not found : $SEARCH_USER"
+            sleep 3
+            menu10
+
+        else
+            CLIENT_NUMBER=$((FOUND_INDEX + 1))
+            break
+        fi
+    fi
+    # ---------- END SEARCH MODE ----------
+
 done
 
 # ============================================================
@@ -1629,8 +1668,8 @@ done
 SELECTED="${VLESS_USERS[$((CLIENT_NUMBER-1))]}"
 
 export user="$(echo "$SELECTED" | awk '{print $2}')"
-export harini="$(echo "$SELECTED" | awk '{print $4}')"
 export exp="$(echo "$SELECTED" | awk '{print $3}')"
+export harini="$(echo "$SELECTED" | awk '{print $4}')"
 export uuid="$(echo "$SELECTED" | awk '{print $5}')"
 
 export patchtls=/vless
@@ -1639,15 +1678,10 @@ export patchupgrade=/httpupgrade
 export patchxhttp=/xhttp
 
 export vlesslink1="vless://${uuid}@${sts}${domain}:$tls?path=$patchtls&security=tls&encryption=none&type=ws&sni=$sni#${user}_${exp}"
-
 export vlesslink2="vless://${uuid}@${sts}${domain}:$none?path=$patchnontls&encryption=none&host=$sni&type=ws#${user}_${exp}"
-
 export vlesslink3="vless://${uuid}@${sts}${domain}:$upgradetls?path=$patchupgrade&security=tls&encryption=none&type=httpupgrade&sni=$sni#${user}_${exp}"
-
 export vlesslink4="vless://${uuid}@${sts}${domain}:$upgradenone?path=$patchupgrade&encryption=none&host=$sni&type=httpupgrade#${user}_${exp}"
-
 export vlesslink5="vless://${uuid}@${sts}${domain}:$xhttptls?path=$patchxhttp&security=tls&encryption=none&type=xhttp&sni=$sni#${user}_${exp}"
-
 export vlesslink6="vless://${uuid}@${sts}${domain}:$xhttpnone?path=$patchxhttp&encryption=none&host=$sni&type=xhttp#${user}_${exp}"
 
 clear
@@ -1926,8 +1960,8 @@ echo " =========================="
 echo ""
 read -n 1 -s -r -p "Press any key to back on menu xray"
 exec xraay
-}
 
+}
 # RENEW VLESS XTLS
 function menu14 () {
 clear
@@ -2001,12 +2035,30 @@ NUMBER_OF_CLIENTS=$(grep -c -E "^#vxtls " "/usr/local/etc/xray/config.json")
 	echo " Press CTRL+C to return"
 	echo -e "==============================="
 	grep -E "^#vxtls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2-3 | nl -s ') '
-	until [[ ${CLIENT_NUMBER} -ge 1 && ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
-		if [[ ${CLIENT_NUMBER} == '1' ]]; then
-			read -rp "Select one client [1]: " CLIENT_NUMBER
+	until [[ ${CLIENT_NUMBER} =~ ^[0-9]+$ ]] && \
+	      [[ ${CLIENT_NUMBER} -ge 1 ]] && \
+	      [[ ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
+		if [[ ${NUMBER_OF_CLIENTS} == '1' ]]; then
+			read -rp "Select one client [1] (or 's' to search): " CLIENT_NUMBER
 		else
-			read -rp "Select one client [1-${NUMBER_OF_CLIENTS}]: " CLIENT_NUMBER
+			read -rp "Select one client [1-${NUMBER_OF_CLIENTS}] (or 's' to search): " CLIENT_NUMBER
 		fi
+
+		# ---------- SEARCH MODE ----------
+		if [[ ${CLIENT_NUMBER} == 's' || ${CLIENT_NUMBER} == 'S' ]]; then
+			read -rp "   Masukkan username yang nak dicari: " SEARCH_USER
+			SEARCH_NUM=$(grep -E "^#vxtls " "/usr/local/etc/xray/config.json" | awk -v u="$SEARCH_USER" '$2==u{print NR; exit}')
+			if [[ -z "$SEARCH_NUM" ]]; then
+				echo ""
+				echo "User not found : $SEARCH_USER"
+				sleep 3
+				menu15
+			else
+				CLIENT_NUMBER="$SEARCH_NUM"
+				break
+			fi
+		fi
+		# ---------- END SEARCH MODE ----------
 	done
 export user=$(grep -E "^#vxtls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2 | sed -n "${CLIENT_NUMBER}"p)
 export harini=$(grep -E "^#vxtls " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 4 | sed -n "${CLIENT_NUMBER}"p)
