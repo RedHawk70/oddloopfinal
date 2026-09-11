@@ -852,6 +852,10 @@ config_default_path () {
 
 config_build_link () {
 	local mode="$1" proto="$2" addr="$3" path="$4" extra="$5"
+	if [[ "$mode" == "xtls" ]]; then
+		echo "vless://${uuid}@${addr}:${xtls}?security=tls&encryption=none&headerType=none&type=tcp&flow=xtls-rprx-vision&sni=${extra}#${user}_${exp}"
+		return
+	fi
 	if [[ "$mode" == "vmess" ]]; then
 		local json
 		case "$proto" in
@@ -881,7 +885,13 @@ config_edit () {
 	if [[ -z "$cname" ]]; then echo "   Nama kosong, dibatalkan."; sleep 2; return; fi
 	echo ""
 	echo "   Pilih protocol:"
-	if [[ "$mode" == "vmess" ]]; then
+	if [[ "$mode" == "xtls" ]]; then
+		echo "   1) XTLS Vision (TLS)"
+		echo ""
+		read -rp "   Protocol [1]: " proto
+		[[ -z "$proto" ]] && proto=1
+		if ! [[ "$proto" =~ ^[1]$ ]]; then echo "   Protocol tidak sah."; sleep 2; return; fi
+	elif [[ "$mode" == "vmess" ]]; then
 		echo "   1) TLS"
 		echo "   2) NTLS"
 		echo ""
@@ -900,13 +910,17 @@ config_edit () {
 	fi
 	read -rp "   Address (Enter untuk ${domain}): " addr
 	[[ -z "$addr" ]] && addr="${domain}"
-	if [[ "$mode" == "vmess" ]]; then
-		dpath="/vmess"
+	if [[ "$mode" == "xtls" ]]; then
+		cpath="-"
 	else
-		dpath="$(config_default_path "$proto")"
+		if [[ "$mode" == "vmess" ]]; then
+			dpath="/vmess"
+		else
+			dpath="$(config_default_path "$proto")"
+		fi
+		read -rp "   Path (Enter untuk ${dpath}): " cpath
+		[[ -z "$cpath" ]] && cpath="${dpath}"
 	fi
-	read -rp "   Path (Enter untuk ${dpath}): " cpath
-	[[ -z "$cpath" ]] && cpath="${dpath}"
 	if (( proto % 2 == 1 )); then
 		read -rp "   SNI: " extra
 	else
@@ -947,7 +961,7 @@ config_list () {
 	while IFS=$'\t' read -r cname mode proto addr cpath extra; do
 		[[ -z "$cname" ]] && continue
 		# Sokong format lama tanpa medan mode: anggap vless
-		if [[ "$mode" != "vmess" && "$mode" != "vless" ]]; then
+		if [[ "$mode" != "vmess" && "$mode" != "vless" && "$mode" != "xtls" ]]; then
 			extra="$cpath"; cpath="$addr"; addr="$proto"; proto="$mode"; mode="vless"
 		fi
 		# Hanya papar config untuk mode semasa (vmess/vless)
@@ -2102,7 +2116,7 @@ echo -e "Encryption     : None"
 echo -e "Network        : TCP"
 echo -e "Flow           : xtls-rprx-vision"
 echo -e "allowInsecure  : True"
-echo -e "\e[$line═════════════════════════════════\e[m"
+echo -e "\e[$line═══════════════════════════════���═\e[m"
 echo -e "Script By $creditt"
 echo -e "\e[$line═════════════════════════════════\e[m"
 echo -e "Link Xtls Vision  : ${vlesslink1}"
@@ -2111,7 +2125,11 @@ echo -e "Created  : $harini"
 echo -e "Expired  : $exp"
 echo ""
 echo ""
-read -n 1 -s -r -p "Press any key to back on menu xray"
+read -rsn1 -p "Press any key to back on menu xray or ctrl+x to see config list" keypress
+if [[ "$keypress" == $'\x18' ]]; then
+CFGMODE="xtls"
+config_list_menu
+fi
 exec xraay
 }
 
@@ -2167,7 +2185,7 @@ echo -e "Flow           : xtls-rprx-vision"
 echo -e "allowInsecure  : True"
 echo -e "\e[$line═════════════════════════════════\e[m"
 echo -e "Script By $creditt"
-echo -e "\e[$line═════════════════════════════════\e[m"
+echo -e "\e[$line════════════════════════════════���\e[m"
 echo -e "Link Xtls Vision  : ${vlesslink1}"
 echo -e "\e[$line═════════════════════════════════\e[m"
 echo -e "Created  : $harini"
@@ -2351,7 +2369,11 @@ echo -e "Created    : $harini"
 echo -e "Expired    : $exp"
 echo ""
 echo ""
-read -n 1 -s -r -p "Press any key to back on menu xray"
+read -rsn1 -p "Press any key to back on menu xray or ctrl+x to see config list" keypress
+if [[ "$keypress" == $'\x18' ]]; then
+CFGMODE="xtls"
+config_list_menu
+fi
 exec xraay
 }
 
