@@ -281,7 +281,11 @@ echo -e "Created   : $harini"
 echo -e "Expired   : $exp"
 echo ""
 echo ""
-read -n 1 -s -r -p "Press any key to back on menu xray"
+read -rsn1 -p "Press any key to back on menu xray or ctrl+x to see config list" keypress
+if [[ "$keypress" == $'\x18' ]]; then
+CFGMODE="vmess"
+config_list_menu
+fi
 exec xraay
 }
 
@@ -796,7 +800,11 @@ echo -e "Created   : $harini"
 echo -e "Expired   : $exp"
 echo ""
 echo ""
-read -n 1 -s -r -p "Press any key to back on menu xray"
+read -rsn1 -p "Press any key to back on menu xray or ctrl+x to see config list" keypress
+if [[ "$keypress" == $'\x18' ]]; then
+CFGMODE="vmess"
+config_list_menu
+fi
 exec xraay
 }
 
@@ -843,7 +851,17 @@ config_default_path () {
 }
 
 config_build_link () {
-	local proto="$1" addr="$2" path="$3" extra="$4"
+	local mode="$1" proto="$2" addr="$3" path="$4" extra="$5"
+	if [[ "$mode" == "vmess" ]]; then
+		local json
+		case "$proto" in
+			1) json=$(printf '{"v":"2","ps":"%s_%s","add":"%s","port":"%s","id":"%s","aid":"0","net":"ws","path":"%s","type":"none","host":"%s","tls":"tls","sni":"%s"}' "$user" "$exp" "$addr" "$tls" "$uuid" "$path" "$extra" "$extra")
+			   echo "vmess://$(printf '%s' "$json" | base64 -w 0)";;
+			2) json=$(printf '{"v":"2","ps":"%s_%s","add":"%s","port":"%s","id":"%s","aid":"0","net":"ws","path":"%s","type":"none","host":"%s","tls":"none"}' "$user" "$exp" "$addr" "$none" "$uuid" "$path" "$extra")
+			   echo "vmess://$(printf '%s' "$json" | base64 -w 0)";;
+		esac
+		return
+	fi
 	case "$proto" in
 		1) echo "vless://${uuid}@${addr}:${tls}?path=${path}&security=tls&encryption=none&type=ws&sni=${extra}#${user}_${exp}";;
 		2) echo "vless://${uuid}@${addr}:${none}?path=${path}&encryption=none&host=${extra}&type=ws#${user}_${exp}";;
@@ -856,34 +874,48 @@ config_build_link () {
 
 config_edit () {
 	local pfile="$1"
-	local cname proto addr cpath dpath extra link
+	local cname proto addr cpath dpath extra link mode
+	mode="${CFGMODE:-vless}"
 	echo ""
 	read -rp "   Nama config: " cname
 	if [[ -z "$cname" ]]; then echo "   Nama kosong, dibatalkan."; sleep 2; return; fi
 	echo ""
 	echo "   Pilih protocol:"
-	echo "   1) Ws TLS"
-	echo "   2) Ws None TLS (Multipath)"
-	echo "   3) HttpUpgrade TLS"
-	echo "   4) HttpUpgrade None TLS"
-	echo "   5) Xhttp TLS"
-	echo "   6) Xhttp None TLS"
-	echo ""
-	read -rp "   Protocol [1-6]: " proto
-	if ! [[ "$proto" =~ ^[1-6]$ ]]; then echo "   Protocol tidak sah."; sleep 2; return; fi
+	if [[ "$mode" == "vmess" ]]; then
+		echo "   1) TLS"
+		echo "   2) NTLS"
+		echo ""
+		read -rp "   Protocol [1-2]: " proto
+		if ! [[ "$proto" =~ ^[1-2]$ ]]; then echo "   Protocol tidak sah."; sleep 2; return; fi
+	else
+		echo "   1) Ws TLS"
+		echo "   2) Ws None TLS (Multipath)"
+		echo "   3) HttpUpgrade TLS"
+		echo "   4) HttpUpgrade None TLS"
+		echo "   5) Xhttp TLS"
+		echo "   6) Xhttp None TLS"
+		echo ""
+		read -rp "   Protocol [1-6]: " proto
+		if ! [[ "$proto" =~ ^[1-6]$ ]]; then echo "   Protocol tidak sah."; sleep 2; return; fi
+	fi
 	read -rp "   Address (Enter untuk ${domain}): " addr
 	[[ -z "$addr" ]] && addr="${domain}"
-	dpath="$(config_default_path "$proto")"
+	if [[ "$mode" == "vmess" ]]; then
+		dpath="/vmess"
+	else
+		dpath="$(config_default_path "$proto")"
+	fi
 	read -rp "   Path (Enter untuk ${dpath}): " cpath
 	[[ -z "$cpath" ]] && cpath="${dpath}"
-	if [[ "$proto" == "1" || "$proto" == "3" || "$proto" == "5" ]]; then
+	if (( proto % 2 == 1 )); then
 		read -rp "   SNI: " extra
 	else
 		read -rp "   Host: " extra
 	fi
-	link="$(config_build_link "$proto" "$addr" "$cpath" "$extra")"
+	link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra")"
 	mkdir -p "$CONFIGLIST_DIR"
-	printf '%s\t%s\n' "$cname" "$link" >> "$pfile"
+	# Simpan sebagai template (tanpa uuid/user/exp) supaya boleh guna semula untuk semua user
+	printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$cname" "$mode" "$proto" "$addr" "$cpath" "$extra" >> "$pfile"
 	echo ""
 	echo "   Config disimpan:"
 	echo "   ══════════════════════════════════"
@@ -895,21 +927,42 @@ config_edit () {
 
 config_list () {
 	local pfile="$1"
-	local cname link
+	local cname mode proto addr cpath extra link found curmode
 	clear
 	echo ""
+	if [[ -z "$uuid" ]]; then
+		echo "   Tiada user semasa. Sila create user dahulu."
+		echo ""
+		read -n 1 -s -r -p "   Press any key to continue"
+		return
+	fi
 	if [[ ! -s "$pfile" ]]; then
 		echo "   Tiada config tersimpan."
 		echo ""
 		read -n 1 -s -r -p "   Press any key to continue"
 		return
 	fi
-	while IFS=$'\t' read -r cname link; do
+	curmode="${CFGMODE:-vless}"
+	found=0
+	while IFS=$'\t' read -r cname mode proto addr cpath extra; do
 		[[ -z "$cname" ]] && continue
+		# Sokong format lama tanpa medan mode: anggap vless
+		if [[ "$mode" != "vmess" && "$mode" != "vless" ]]; then
+			extra="$cpath"; cpath="$addr"; addr="$proto"; proto="$mode"; mode="vless"
+		fi
+		# Hanya papar config untuk mode semasa (vmess/vless)
+		[[ "$mode" != "$curmode" ]] && continue
+		# Bina semula link ikut user semasa (uuid/user/exp/port sesi ini)
+		link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra")"
 		echo "═════════════════════════════════"
 		echo "Link ${cname}  : ${link}"
+		found=1
 	done < "$pfile"
 	echo "═════════════════════════════════"
+	if [[ "$found" == "0" ]]; then
+		echo "   Tiada config tersimpan."
+		echo "═════════════════════════════════"
+	fi
 	echo ""
 	read -n 1 -s -r -p "   Press any key to continue"
 }
@@ -1434,6 +1487,7 @@ echo ""
 
 read -rsn1 -p "Press any key to back on menu xray or ctrl+x to see config list" keypress
 if [[ "$keypress" == $'\x18' ]]; then
+CFGMODE="vless"
 config_list_menu
 fi
 
@@ -1913,7 +1967,7 @@ echo -e "\e[$line═════════════════════
 echo -e "Link Ws None TLS (Multipath)  : ${vlesslink2}"
 echo -e "\e[$line═════════════════════════════════\e[m"
 echo -e "Link HttpUpgrade TLS  : ${vlesslink3}"
-echo -e "\e[$line═════════════════════════════════\e[m"
+echo -e "\e[$line═══════════════════════════��═════\e[m"
 echo -e "Link HttpUpgrade None TLS  : ${vlesslink4}"
 echo -e "\e[$line═════════════════════════════════\e[m"
 echo -e "Link Xhttp TLS  : ${vlesslink5}"
@@ -1924,7 +1978,11 @@ echo -e "Created   : $harini"
 echo -e "Expired   : $exp"
 echo ""
 echo ""
-read -n 1 -s -r -p "Press any key to back on menu xray"
+read -rsn1 -p "Press any key to back on menu xray or ctrl+x to see config list" keypress
+if [[ "$keypress" == $'\x18' ]]; then
+CFGMODE="vless"
+config_list_menu
+fi
 exec xraay
 }
 
