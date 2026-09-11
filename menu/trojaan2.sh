@@ -343,12 +343,30 @@ NUMBER_OF_CLIENTS=$(grep -c -E "^#trws " "/usr/local/etc/xray/config.json")
 	echo " Press CTRL+C to return"
 	echo -e "==============================="
 	grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2-3 | nl -s ') '
-	until [[ ${CLIENT_NUMBER} -ge 1 && ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
-		if [[ ${CLIENT_NUMBER} == '1' ]]; then
-			read -rp "Select one client [1]: " CLIENT_NUMBER
+	until [[ ${CLIENT_NUMBER} =~ ^[0-9]+$ ]] && \
+	      [[ ${CLIENT_NUMBER} -ge 1 ]] && \
+	      [[ ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
+		if [[ ${NUMBER_OF_CLIENTS} == '1' ]]; then
+			read -rp "Select one client [1] (or 's' to search): " CLIENT_NUMBER
 		else
-			read -rp "Select one client [1-${NUMBER_OF_CLIENTS}]: " CLIENT_NUMBER
+			read -rp "Select one client [1-${NUMBER_OF_CLIENTS}] (or 's' to search): " CLIENT_NUMBER
 		fi
+
+		# ---------- SEARCH MODE ----------
+		if [[ ${CLIENT_NUMBER} == 's' || ${CLIENT_NUMBER} == 'S' ]]; then
+			read -rp "   Masukkan username yang nak dicari: " SEARCH_USER
+			SEARCH_NUM=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | awk -v u="$SEARCH_USER" '$2==u{print NR; exit}')
+			if [[ -z "$SEARCH_NUM" ]]; then
+				echo ""
+				echo "User not found : $SEARCH_USER"
+				sleep 3
+				menu5
+			else
+				CLIENT_NUMBER="$SEARCH_NUM"
+				break
+			fi
+		fi
+		# ---------- END SEARCH MODE ----------
 	done
 export patchtls=/trojanwstls
 export patchnone=/trojanwsntls
