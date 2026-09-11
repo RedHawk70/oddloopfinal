@@ -983,7 +983,8 @@ config_list () {
 
 config_delete () {
 	local pfile="$1"
-	local dnum total cname
+	local dnum cname mode proto addr cpath extra curmode lineno i realline
+	local -a map names
 	clear
 	echo ""
 	if [[ ! -s "$pfile" ]]; then
@@ -992,21 +993,43 @@ config_delete () {
 		read -n 1 -s -r -p "   Press any key to continue"
 		return
 	fi
+	curmode="${CFGMODE:-vless}"
+	lineno=0
+	map=()
+	names=()
+	while IFS=$'\t' read -r cname mode proto addr cpath extra; do
+		lineno=$((lineno+1))
+		[[ -z "$cname" ]] && continue
+		if [[ "$mode" != "vmess" && "$mode" != "vless" && "$mode" != "xtls" && "$mode" != "trojan" ]]; then
+			mode="vless"
+		fi
+		[[ "$mode" != "$curmode" ]] && continue
+		map+=("$lineno")
+		names+=("$cname")
+	done < "$pfile"
+	if [[ ${#map[@]} -eq 0 ]]; then
+		echo "   Tiada config tersimpan."
+		echo ""
+		read -n 1 -s -r -p "   Press any key to continue"
+		return
+	fi
 	echo "   Senarai config:"
-	cut -f1 "$pfile" | nl -s ') ' -w2
+	for i in "${!names[@]}"; do
+		printf '%2d) %s\n' "$((i+1))" "${names[$i]}"
+	done
 	echo ""
-	total=$(wc -l < "$pfile")
 	read -rp "   Nombor config untuk delete: " dnum
 	[[ -z "$dnum" ]] && return
-	if ! [[ "$dnum" =~ ^[0-9]+$ ]] || [[ "$dnum" -lt 1 ]] || [[ "$dnum" -gt "$total" ]]; then
+	if ! [[ "$dnum" =~ ^[0-9]+$ ]] || [[ "$dnum" -lt 1 ]] || [[ "$dnum" -gt ${#map[@]} ]]; then
 		echo ""
 		echo "   Nombor tidak sah."
 		echo ""
 		read -n 1 -s -r -p "   Press any key to continue"
 		return
 	fi
-	cname=$(sed -n "${dnum}p" "$pfile" | cut -f1)
-	sed -i "${dnum}d" "$pfile"
+	realline="${map[$((dnum-1))]}"
+	cname="${names[$((dnum-1))]}"
+	sed -i "${realline}d" "$pfile"
 	echo ""
 	echo "   Config '$cname' telah dipadam."
 	echo ""
@@ -2173,7 +2196,7 @@ clear
 echo -e ""
 echo -e "\e[$line══════════════════════════════════\e[m"
 echo -e "\e[$back_text \e[30m[\e[$box TRIAL XRAY VLESS XTLS VISION\e[30m ]\e[1m \e[m"
-echo -e "\e[$line══════════════════════════════════\e[m"
+echo -e "\e[$line════════════���═════════════════════\e[m"
 echo -e "Remarks        : ${user}"
 echo -e "Domain         : ${domain}"
 echo -e "Ip/Host        : ${MYIP}"
