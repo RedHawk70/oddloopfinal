@@ -70,8 +70,6 @@ vmess=$(grep -c -E "^#vms " "/usr/local/etc/xray/config.json")
 vless=$(grep -E '^#vls ' "/usr/local/etc/xray/config.json" | awk '{print tolower($2)}' | sort -u | wc -l)
 # TOTAL ACC CREATE  VLESS TCP XTLS
 xtls=$(grep -c -E "^#vxtls " "/usr/local/etc/xray/config.json")
-# TOTAL ACC CREATE  TROJAN
-trtls=$(grep -c -E "^#trx " "/usr/local/etc/xray/config.json")
 # TOTAL ACC CREATE  TROJAN WS TLS
 trws=$(grep -c -E "^#trws " "/usr/local/etc/xray/config.json")
 # TOTAL ACC CREATE OVPN SSH
@@ -363,8 +361,8 @@ printf "  %s%-*s%s %s%*s %*s %s%*s\033[0m%s\n" \
   "$GREEN" "$wcol" "[$tmon]" \
   "$RESET"
 echo -e " \e[$line╘═════════════════════════════════════════════════════════════╛\e[m"
-echo -e " \e[$text Ssh/Ovpn   V2ray   Vless   Vlessxtls   Trojan-Ws   Trojan-Tls \e[0m "    
-echo -e " \e[$below    $total_ssh         $vmess       $vless        $xtls           $trws           $trtls \e[0m "
+echo -e " \e[$text Ssh/Ovpn   V2ray   Vless   Vlessxtls   Trojan-Ws \e[0m "    
+echo -e " \e[$below    $total_ssh         $vmess       $vless        $xtls           $trws \e[0m "
 echo -e " \e[$line╒═════════════════════════════════════════════════════════════╕\e[m"
 echo -e "  \e[$back_text                        \e[30m[\e[$box PANEL MENU\e[30m ]\e[1m                       \e[m"
 echo -e " \e[$line╘═════════════════════════════════════════════════════════════╛\e[m"
