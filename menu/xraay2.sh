@@ -1136,9 +1136,11 @@ config_edit () {
 		[[ -z "$cpath" ]] && cpath="${dpath}"
 	fi
 	if (( proto % 2 == 1 )); then
-		read -rp "   SNI: " extra
+		read -rp "   SNI (Enter untuk ${domain}): " extra
+		[[ -z "$extra" ]] && extra="${domain}"
 	else
-		read -rp "   Host: " extra
+		read -rp "   Host (Enter untuk ${domain}): " extra
+		[[ -z "$extra" ]] && extra="${domain}"
 	fi
 	link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra")"
 	mkdir -p "$CONFIGLIST_DIR"
@@ -2513,7 +2515,7 @@ clear
 echo -e ""
 echo -e "\e[$line══════════════════════════════════\e[m"
 echo -e "\e[$back_text \e[30m[\e[$box TRIAL XRAY VLESS XTLS VISION\e[30m ]\e[1m \e[m"
-echo -e "\e[$line════════════���═════════════════════\e[m"
+echo -e "\e[$line══════════════════════════════════\e[m"
 echo -e "Remarks        : ${user}"
 echo -e "Domain         : ${domain}"
 echo -e "Ip/Host        : ${MYIP}"
@@ -2525,7 +2527,7 @@ echo -e "Flow           : xtls-rprx-vision"
 echo -e "allowInsecure  : True"
 echo -e "\e[$line═════════════════════════════════\e[m"
 echo -e "Script By $creditt"
-echo -e "\e[$line════════════════════════════════���\e[m"
+echo -e "\e[$line═════════════════════════════════\e[m"
 echo -e "Link Xtls Vision  : ${vlesslink1}"
 echo -e "\e[$line═════════════════════════════════\e[m"
 echo -e "Created  : $harini"
