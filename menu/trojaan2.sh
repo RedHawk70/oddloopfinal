@@ -224,41 +224,89 @@ echo -e "Created : $harini"
 echo -e "Expired : $exp"
 echo ""
 echo ""
-read -n 1 -s -r -p "Press any key to back on menu Trojan"
+read -rsn1 -p "Press any key to back on menu Trojan or ctrl+x to see config list" keypress
+if [[ "$keypress" == $'\x18' ]]; then
+CFGMODE="trojan"
+config_list_menu
+fi
 trojaan
 }
 
 function menu3 () {
 clear
-NUMBER_OF_CLIENTS=$(grep -c -E "^#trws " "/usr/local/etc/xray/config.json")
-	if [[ ${NUMBER_OF_CLIENTS} == '0' ]]; then
-		echo ""
-		echo "You have no existing clients!"
-		exit 1
-	fi
+CONFIG="/usr/local/etc/xray/config.json"
+NONE="/usr/local/etc/xray/none.json"
 
-	echo ""
-	echo " DELETE XRAY TROJAN WS TLS"
-	echo " Select the existing client you want to remove"
-	echo " Press CTRL+C to return"
-	echo " ==============================="
-	echo "     No  Expired   User"
-	grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2-3 | nl -s ') '
-	until [[ ${CLIENT_NUMBER} -ge 1 && ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
-		if [[ ${CLIENT_NUMBER} == '1' ]]; then
-			read -rp "Select one client [1]: " CLIENT_NUMBER
-		else
-			read -rp "Select one client [1-${NUMBER_OF_CLIENTS}]: " CLIENT_NUMBER
-		fi
-	done
-export harini=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 4 | sed -n "${CLIENT_NUMBER}"p)
-export uuid=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 5 | sed -n "${CLIENT_NUMBER}"p)
-export CLIENT_NAME=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2-3 | sed -n "${CLIENT_NUMBER}"p)
-export user=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2 | sed -n "${CLIENT_NUMBER}"p)
-export exp=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 3 | sed -n "${CLIENT_NUMBER}"p)
+# Senarai user unik berdasarkan #trws SAHAJA
+mapfile -t TROJAN_USERS < <(
+awk '
+/^#trws / {
+    user=$2
+    if (!(user in seen)) {
+        seen[user]=1
+        print $0
+    }
+}
+' "$CONFIG"
+)
 
-sed -i "/^#trws $user $exp $harini $uuid/,/^},{/d" /usr/local/etc/xray/config.json
-sed -i "/^#trws $user $exp $harini $uuid/,/^},{/d" /usr/local/etc/xray/none.json
+NUMBER_OF_CLIENTS=${#TROJAN_USERS[@]}
+
+if [[ ${NUMBER_OF_CLIENTS} == '0' ]]; then
+    echo ""
+    echo "You have no existing clients!"
+    exit 1
+fi
+
+echo ""
+echo " DELETE XRAY TROJAN WS TLS"
+echo " Select the existing client you want to remove"
+echo " Press CTRL+C to return"
+echo " ==============================="
+echo "     No  Expired   User"
+
+# Paparkan #trws sahaja, 1 nama = 1 user
+for ((i=0; i<NUMBER_OF_CLIENTS; i++)); do
+    echo "${TROJAN_USERS[$i]}" | cut -d ' ' -f 2-3
+done | nl -s ') '
+
+CLIENT_NUMBER=""
+
+until [[ ${CLIENT_NUMBER} =~ ^[0-9]+$ ]] && \
+      [[ ${CLIENT_NUMBER} -ge 1 ]] && \
+      [[ ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
+
+    if [[ ${NUMBER_OF_CLIENTS} == '1' ]]; then
+        read -rp "Select one client [1]: " CLIENT_NUMBER
+    else
+        read -rp "Select one client [1-${NUMBER_OF_CLIENTS}]: " CLIENT_NUMBER
+    fi
+
+done
+
+# Ambil baris user yang dipilih
+CLIENT_LINE="${TROJAN_USERS[$((CLIENT_NUMBER-1))]}"
+
+if [[ -z "$CLIENT_LINE" ]]; then
+    echo "User tidak dijumpai."
+    exit 1
+fi
+
+harini=$(echo "$CLIENT_LINE" | awk '{print $4}')
+uuid=$(echo "$CLIENT_LINE" | awk '{print $5}')
+CLIENT_NAME=$(echo "$CLIENT_LINE" | awk '{print $2" "$3}')
+user=$(echo "$CLIENT_LINE" | awk '{print $2}')
+exp=$(echo "$CLIENT_LINE" | awk '{print $3}')
+
+# Pastikan tag betul-betul wujud sebelum padam
+if ! grep -qF "#trws $user $exp $harini $uuid" "$CONFIG"; then
+    echo ""
+    echo "Tag akaun tidak dijumpai. Padam dibatalkan."
+    exit 1
+fi
+
+sed -i "/^#trws $user $exp $harini $uuid/,/^},{/d" "$CONFIG"
+sed -i "/^#trws $user $exp $harini $uuid/,/^},{/d" "$NONE"
 
 systemctl restart xray@none
 systemctl restart xray@config
@@ -275,44 +323,165 @@ read -n 1 -s -r -p "Press any key to back on menu Trojan"
 trojaan
 }
 
+
 function menu4 () {
 clear
-NUMBER_OF_CLIENTS=$(grep -c -E "^#trws " "/usr/local/etc/xray/config.json")
-	if [[ ${NUMBER_OF_CLIENTS} == '0' ]]; then
-		clear
-		echo ""
-		echo "You have no existing clients!"
-		exit 1
-	fi
+CONFIG="/usr/local/etc/xray/config.json"
+NONE="/usr/local/etc/xray/none.json"
 
-	clear
-	echo ""
-	echo "Renew User Xray Trojan Ws Tls"
-	echo "Select the existing client you want to renew"
-	echo " Press CTRL+C to return"
-	echo -e "==============================="
-	grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2-3 | nl -s ') '
-	until [[ ${CLIENT_NUMBER} -ge 1 && ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
-		if [[ ${CLIENT_NUMBER} == '1' ]]; then
-			read -rp "Select one client [1]: " CLIENT_NUMBER
-		else
-			read -rp "Select one client [1-${NUMBER_OF_CLIENTS}]: " CLIENT_NUMBER
-		fi
-	done
+# Senarai user unik berdasarkan #trws SAHAJA
+mapfile -t TROJAN_USERS < <(
+awk '
+/^#trws / {
+    user=$2
+    if (!(user in seen)) {
+        seen[user]=1
+        print $0
+    }
+}
+' "$CONFIG"
+)
+
+NUMBER_OF_CLIENTS=${#TROJAN_USERS[@]}
+
+if [[ ${NUMBER_OF_CLIENTS} == '0' ]]; then
+    clear
+    echo ""
+    echo "You have no existing clients!"
+    exit 1
+fi
+
+clear
+echo ""
+echo "Renew User Xray Trojan Ws Tls"
+echo "Select the existing client you want to renew"
+echo " Press CTRL+C to return"
+echo -e "==============================="
+
+# Paparkan #trws sahaja, 1 nama = 1 user
+for ((i=0; i<NUMBER_OF_CLIENTS; i++)); do
+    echo "${TROJAN_USERS[$i]}" | cut -d ' ' -f 2-3
+done | nl -s ') '
+
+echo ""
+
+CLIENT_NUMBER=""
+
+# ============================================================
+# PILIH CLIENT (nombor) ATAU SEARCH (tekan 's')
+# ============================================================
+
+until [[ ${CLIENT_NUMBER} =~ ^[0-9]+$ ]] && \
+      [[ ${CLIENT_NUMBER} -ge 1 ]] && \
+      [[ ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
+
+    if [[ ${NUMBER_OF_CLIENTS} == '1' ]]; then
+        read -rp "Select one client [1] (or 's' to search): " CLIENT_NUMBER
+    else
+        read -rp "Select one client [1-${NUMBER_OF_CLIENTS}] (or 's' to search): " CLIENT_NUMBER
+    fi
+
+    # ---------- SEARCH MODE (SEPARA / PARTIAL) ----------
+    if [[ ${CLIENT_NUMBER} == 's' || ${CLIENT_NUMBER} == 'S' ]]; then
+        read -rp "   Masukkan username yang nak dicari: " SEARCH_USER
+
+        if [[ -z "$SEARCH_USER" ]]; then
+            continue
+        fi
+
+        MATCHES=()
+        for ((i=0; i<NUMBER_OF_CLIENTS; i++)); do
+            u="$(echo "${TROJAN_USERS[$i]}" | awk '{print $2}')"
+            if [[ "${u,,}" == *"${SEARCH_USER,,}"* ]]; then
+                MATCHES+=("$i")
+            fi
+        done
+
+        if [[ ${#MATCHES[@]} -eq 0 ]]; then
+            echo ""
+            echo "User not found : $SEARCH_USER"
+            sleep 3
+            menu4
+
+        elif [[ ${#MATCHES[@]} -eq 1 ]]; then
+            CLIENT_NUMBER=$((MATCHES[0] + 1))
+            break
+
+        else
+            echo ""
+            echo "Jumpa ${#MATCHES[@]} user yang sepadan:"
+            for ((m=0; m<${#MATCHES[@]}; m++)); do
+                echo "  $((m+1))) $(echo "${TROJAN_USERS[${MATCHES[$m]}]}" | cut -d ' ' -f 2-3)"
+            done
+            read -rp "   Pilih nombor [1-${#MATCHES[@]}] (atau 's' cari semula): " MATCH_PICK
+
+            if [[ ${MATCH_PICK} == 's' || ${MATCH_PICK} == 'S' ]]; then
+                continue
+            fi
+
+            if [[ ${MATCH_PICK} =~ ^[0-9]+$ ]] && \
+               [[ ${MATCH_PICK} -ge 1 ]] && \
+               [[ ${MATCH_PICK} -le ${#MATCHES[@]} ]]; then
+                CLIENT_NUMBER=$(( ${MATCHES[$((MATCH_PICK-1))]} + 1 ))
+                break
+            else
+                echo "Pilihan tidak sah."
+                sleep 1
+                continue
+            fi
+        fi
+    fi
+    # ---------- END SEARCH MODE ----------
+
+done
+
+# Ambil baris user yang dipilih
+CLIENT_LINE="${TROJAN_USERS[$((CLIENT_NUMBER-1))]}"
+
+if [[ -z "$CLIENT_LINE" ]]; then
+    echo "User tidak dijumpai."
+    exit 1
+fi
+
+harini=$(echo "$CLIENT_LINE" | awk '{print $4}')
+uuid=$(echo "$CLIENT_LINE" | awk '{print $5}')
+user=$(echo "$CLIENT_LINE" | awk '{print $2}')
+exp=$(echo "$CLIENT_LINE" | awk '{print $3}')
+
+echo ""
+echo "================================="
+echo "Client Name : $user"
+echo "Current Exp : $exp"
+echo "Key         : $user"
+echo "================================="
+echo ""
+
 read -p "Expired (days): " masaaktif
-export harini=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 4 | sed -n "${CLIENT_NUMBER}"p)
-export uuid=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 5 | sed -n "${CLIENT_NUMBER}"p)
-export user=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2 | sed -n "${CLIENT_NUMBER}"p)
-export exp=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 3 | sed -n "${CLIENT_NUMBER}"p)
-export now=$(date +%Y-%m-%d)
-export d1=$(date -d "$exp" +%s)
-export d2=$(date -d "$now" +%s)
-export exp2=$(( (d1 - d2) / 86400 ))
-export exp3=$(($exp2 + $masaaktif))
-export exp4=`date -d "$exp3 days" +"%Y-%m-%d"`
 
-sed -i "s/#trws $user $exp $harini $uuid/#trws $user $exp4 $harini $uuid/g" /usr/local/etc/xray/config.json
-sed -i "s/#trws $user $exp $harini $uuid/#trws $user $exp4 $harini $uuid/g" /usr/local/etc/xray/none.json
+if ! [[ "$masaaktif" =~ ^-?[0-9]+$ ]]; then
+    echo "Expired days mesti nombor."
+    exit 1
+fi
+
+now=$(date +%Y-%m-%d)
+d1=$(date -d "$exp" +%s)
+d2=$(date -d "$now" +%s)
+exp2=$(( (d1 - d2) / 86400 ))
+
+if [[ $exp2 -lt 0 ]]; then
+    exp2=0
+fi
+
+exp3=$((exp2 + masaaktif))
+exp4=$(date -d "$exp3 days" +"%Y-%m-%d")
+
+echo ""
+echo "Old Expiry : $exp"
+echo "New Expiry : $exp4"
+echo ""
+
+sed -i "s|^#trws $user $exp $harini $uuid$|#trws $user $exp4 $harini $uuid|" /usr/local/etc/xray/config.json
+sed -i "s|^#trws $user $exp $harini $uuid$|#trws $user $exp4 $harini $uuid|" /usr/local/etc/xray/none.json
 
 service cron restart
 
@@ -332,52 +501,127 @@ function menu5 () {
 clear
 trnone="$(cat ~/log-install.txt | grep -w "Xray Trojan Ws None Tls" | cut -d: -f2|sed 's/ //g')"
 trws="$(cat ~/log-install.txt | grep -w "Trojan Ws Tls" | cut -d: -f2|sed 's/ //g')"
-NUMBER_OF_CLIENTS=$(grep -c -E "^#trws " "/usr/local/etc/xray/config.json")
-	if [[ ${NUMBER_OF_CLIENTS} == '0' ]]; then
-		clear
-		echo ""
-		echo "You have no existing clients!"
-		exit 1
-	fi
+CONFIG="/usr/local/etc/xray/config.json"
+NONE="/usr/local/etc/xray/none.json"
 
-	clear
-	echo ""
-	echo "SHOW USER XRAY TROJAN TCP TLS"
-	echo "Select the existing client you want to renew"
-	echo " Press CTRL+C to return"
-	echo -e "==============================="
-	grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2-3 | nl -s ') '
-	until [[ ${CLIENT_NUMBER} =~ ^[0-9]+$ ]] && \
-	      [[ ${CLIENT_NUMBER} -ge 1 ]] && \
-	      [[ ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
-		if [[ ${NUMBER_OF_CLIENTS} == '1' ]]; then
-			read -rp "Select one client [1] (or 's' to search): " CLIENT_NUMBER
-		else
-			read -rp "Select one client [1-${NUMBER_OF_CLIENTS}] (or 's' to search): " CLIENT_NUMBER
-		fi
+# Senarai user unik berdasarkan #trws SAHAJA
+mapfile -t TROJAN_USERS < <(
+awk '
+/^#trws / {
+    user=$2
+    if (!(user in seen)) {
+        seen[user]=1
+        print $0
+    }
+}
+' "$CONFIG"
+)
 
-		# ---------- SEARCH MODE ----------
-		if [[ ${CLIENT_NUMBER} == 's' || ${CLIENT_NUMBER} == 'S' ]]; then
-			read -rp "   Masukkan username yang nak dicari: " SEARCH_USER
-			SEARCH_NUM=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | awk -v u="$SEARCH_USER" '$2==u{print NR; exit}')
-			if [[ -z "$SEARCH_NUM" ]]; then
-				echo ""
-				echo "User not found : $SEARCH_USER"
-				sleep 3
-				menu5
-			else
-				CLIENT_NUMBER="$SEARCH_NUM"
-				break
-			fi
-		fi
-		# ---------- END SEARCH MODE ----------
-	done
+NUMBER_OF_CLIENTS=${#TROJAN_USERS[@]}
+
+if [[ ${NUMBER_OF_CLIENTS} == '0' ]]; then
+    clear
+    echo ""
+    echo "You have no existing clients!"
+    exit 1
+fi
+
+clear
+echo ""
+echo "SHOW USER XRAY TROJAN TCP TLS"
+echo "Select the existing client you want to renew"
+echo " Press CTRL+C to return"
+echo -e "==============================="
+
+# Paparkan #trws sahaja, 1 nama = 1 user
+for ((i=0; i<NUMBER_OF_CLIENTS; i++)); do
+    echo "${TROJAN_USERS[$i]}" | cut -d ' ' -f 2-3
+done | nl -s ') '
+
+echo ""
+
+CLIENT_NUMBER=""
+
+# ============================================================
+# PILIH CLIENT (nombor) ATAU SEARCH (tekan 's')
+# ============================================================
+
+until [[ ${CLIENT_NUMBER} =~ ^[0-9]+$ ]] && \
+      [[ ${CLIENT_NUMBER} -ge 1 ]] && \
+      [[ ${CLIENT_NUMBER} -le ${NUMBER_OF_CLIENTS} ]]; do
+
+    if [[ ${NUMBER_OF_CLIENTS} == '1' ]]; then
+        read -rp "Select one client [1] (or 's' to search): " CLIENT_NUMBER
+    else
+        read -rp "Select one client [1-${NUMBER_OF_CLIENTS}] (or 's' to search): " CLIENT_NUMBER
+    fi
+
+    # ---------- SEARCH MODE (SEPARA / PARTIAL) ----------
+    if [[ ${CLIENT_NUMBER} == 's' || ${CLIENT_NUMBER} == 'S' ]]; then
+        read -rp "   Masukkan username yang nak dicari: " SEARCH_USER
+
+        if [[ -z "$SEARCH_USER" ]]; then
+            continue
+        fi
+
+        MATCHES=()
+        for ((i=0; i<NUMBER_OF_CLIENTS; i++)); do
+            u="$(echo "${TROJAN_USERS[$i]}" | awk '{print $2}')"
+            if [[ "${u,,}" == *"${SEARCH_USER,,}"* ]]; then
+                MATCHES+=("$i")
+            fi
+        done
+
+        if [[ ${#MATCHES[@]} -eq 0 ]]; then
+            echo ""
+            echo "User not found : $SEARCH_USER"
+            sleep 3
+            menu5
+
+        elif [[ ${#MATCHES[@]} -eq 1 ]]; then
+            CLIENT_NUMBER=$((MATCHES[0] + 1))
+            break
+
+        else
+            echo ""
+            echo "Jumpa ${#MATCHES[@]} user yang sepadan:"
+            for ((m=0; m<${#MATCHES[@]}; m++)); do
+                echo "  $((m+1))) $(echo "${TROJAN_USERS[${MATCHES[$m]}]}" | cut -d ' ' -f 2-3)"
+            done
+            read -rp "   Pilih nombor [1-${#MATCHES[@]}] (atau 's' cari semula): " MATCH_PICK
+
+            if [[ ${MATCH_PICK} == 's' || ${MATCH_PICK} == 'S' ]]; then
+                continue
+            fi
+
+            if [[ ${MATCH_PICK} =~ ^[0-9]+$ ]] && \
+               [[ ${MATCH_PICK} -ge 1 ]] && \
+               [[ ${MATCH_PICK} -le ${#MATCHES[@]} ]]; then
+                CLIENT_NUMBER=$(( ${MATCHES[$((MATCH_PICK-1))]} + 1 ))
+                break
+            else
+                echo "Pilihan tidak sah."
+                sleep 1
+                continue
+            fi
+        fi
+    fi
+    # ---------- END SEARCH MODE ----------
+
+done
 export patchtls=/trojanwstls
 export patchnone=/trojanwsntls
-export user=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 2 | sed -n "${CLIENT_NUMBER}"p)
-export harini=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 4 | sed -n "${CLIENT_NUMBER}"p)
-export exp=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 3 | sed -n "${CLIENT_NUMBER}"p)
-export uuid=$(grep -E "^#trws " "/usr/local/etc/xray/config.json" | cut -d ' ' -f 5 | sed -n "${CLIENT_NUMBER}"p)
+CLIENT_LINE="${TROJAN_USERS[$((CLIENT_NUMBER-1))]}"
+
+if [[ -z "$CLIENT_LINE" ]]; then
+    echo "User tidak dijumpai."
+    exit 1
+fi
+
+export user=$(echo "$CLIENT_LINE" | awk '{print $2}')
+export harini=$(echo "$CLIENT_LINE" | awk '{print $4}')
+export exp=$(echo "$CLIENT_LINE" | awk '{print $3}')
+export uuid=$(echo "$CLIENT_LINE" | awk '{print $5}')
 
 export trojanlink1="trojan://${user}@${sts}${domain}:$trws?path=$patchtls&security=tls&host=bug.com&type=ws&sni=$sni#${user}"
 export trojanlink="trojan://${user}@${sts}${domain}:$trnone?path=$patchnone&security=none&host=$sni&type=ws#${user}"
@@ -483,9 +727,11 @@ config_edit () {
 	read -rp "   Path (Enter untuk ${dpath}): " cpath
 	[[ -z "$cpath" ]] && cpath="${dpath}"
 	if (( proto % 2 == 1 )); then
-		read -rp "   SNI: " extra
+		read -rp "   SNI (Enter untuk ${domain}): " extra
+		[[ -z "$extra" ]] && extra="${domain}"
 	else
-		read -rp "   Host: " extra
+		read -rp "   Host (Enter untuk ${domain}): " extra
+		[[ -z "$extra" ]] && extra="${domain}"
 	fi
 	link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra")"
 	mkdir -p "$CONFIGLIST_DIR"
