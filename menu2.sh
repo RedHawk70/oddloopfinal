@@ -268,23 +268,13 @@ else
   expired_display="$exp ${RED}(Expired)${NC}"
 fi
 # ================== LEBAR BOX ==================
-# BOXW = lebar ruang teks di dalam di antara dua │ │
 BOXW=59          # <-- UBAH NILAI INI UNTUK KECIL/BESAR BOX
 LABELW=11        # lebar label (supaya ":" sejajar)
 BORDER=$(printf '═%.0s' $(seq 1 $((BOXW+2))))
 row_info() {
   local label="$1"
   local value="$2"
-  local raw plain plen pad
-  printf -v raw "%-*s : %s" "$LABELW" "$label" "$value"
-  plain=$(printf '%s' "$raw" | sed -r 's/\x1B\[[0-9;]*m//g')
-  plen=${#plain}
-
-  pad=$((BOXW - plen))
-  if [ "$pad" -lt 0 ]; then
-    pad=0
-  fi
-  printf " \e[$line│\e[m \e[$text%s%*s\e[m \e[$line│\e[m\n" "$raw" "$pad" ""
+  printf "  \e[$text%-*s : %s\e[m\n" "$LABELW" "$label" "$value"
 }
 # ================== HEADER BOX ==================
 echo -e " \e[$line╒${BORDER}╕\e[m"
