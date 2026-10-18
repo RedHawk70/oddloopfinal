@@ -3,10 +3,10 @@
 # Jalankan sebagai root (sudo) supaya journalctl/ss/lsof dapat maklumat penuh.
 #
 # Guna:
-#   sudo ./cek-ssh.sh                 # default: journal sejak "7 days ago"
-#   sudo ./cek-ssh.sh "2 days ago"    # tempoh journal custom
+#   sudo ./cek-ssh.sh                 # boot semasa sahaja
+#   sudo ./cek-ssh.sh "2 hours ago"   # hadkan tempoh (dalam boot semasa)
 #   sudo ./cek-ssh.sh --all           # tunjuk root juga
-#   sudo ./cek-ssh.sh --no-root       # sembunyi root (default)
+#   sudo ./cek-ssh.sh --debug         # tunjuk baris yang ditapis + sebab
 #
 # Serasi: Debian / Ubuntu (bash 4+, systemd, iproute2)
 
@@ -16,17 +16,21 @@ export LANG=en_US.UTF-8
 # ---------------------------
 # Parse argumen (flag vs tempoh)
 # ---------------------------
-SEED_SINCE="7 days ago"
+SEED_SINCE=""
 SKIP_ROOT=1
+DEBUG=0
 for a in "$@"; do
   case "$a" in
     --all|-a)     SKIP_ROOT=0 ;;
     --no-root|-n) SKIP_ROOT=1 ;;
+    --debug|-d)   DEBUG=1 ;;
     -h|--help)
-      sed -n '2,12p' "$0"; exit 0 ;;
+      sed -n '2,13p' "$0"; exit 0 ;;
     *) SEED_SINCE="$a" ;;
   esac
 done
+
+debug() { [ "$DEBUG" -eq 1 ] && printf 'DEBUG: %s\n' "$*" >&2; return 0; }
 
 # ---------------------------
 # Semakan asas
@@ -62,6 +66,12 @@ sanitize_field() {
   printf '%s' "$1" | tr -d '[:cntrl:]'
 }
 
+normalize_ip() {
+  local ip="$1"
+  ip="${ip#[}"; ip="${ip%]}"
+  printf '%s' "${ip#::ffff:}"
+}
+
 # parse_peer "<addr>" -> "ip port"
 # Sokong: "1.2.3.4:22", "[::1]:22", "2001:db8::1" (IPv6 tanpa kurungan = IP sahaja)
 parse_peer() {
@@ -80,19 +90,20 @@ parse_peer() {
   else
     ip="$peer"
   fi
-  printf '%s %s' "$ip" "$port"
+  printf '%s %s' "$(normalize_ip "$ip")" "$port"
 }
 
-get_addr_from_ss() {
-  local pid="$1"
-  ss -Htnp 2>/dev/null | awk -v p="pid=$pid," 'index($0,p){ print $(NF-1); exit }'
-}
-
-get_addr_from_lsof() {
-  local pid="$1" out=""
-  [ "$HAS_LSOF" -eq 1 ] || return 0
-  out="$(lsof -Pan -p "$pid" -i 2>/dev/null | awk '/->[0-9a-fA-F[]/{ for (i=1;i<=NF;i++) if ($i ~ /->/) { sub(/.*->/,"",$i); print $i; exit } }')"
-  printf '%s' "$out"
+# Padan alamat dalam journal dengan peer socket sebenar.
+# Ini yang menghalang "ghost row" akibat PID diguna semula.
+peer_matches() {
+  local jip jport lip lport
+  jip="$(normalize_ip "$1")"; jport="$2"; lip=""; lport=""
+  read -r lip lport <<<"$(parse_peer "$3")"
+  [ -n "$jip" ] && [ -n "$lip" ] || return 1
+  [ "$jip" = "$lip" ] || return 1
+  [ -z "$jport" ] && return 0
+  [ -z "$lport" ] && return 0
+  [ "$jport" = "$lport" ]
 }
 
 pid_start_epoch() {
@@ -115,6 +126,68 @@ epoch_to_hm() {
   fi
 }
 
+# Bina peta PID -> peer daripada socket ESTABLISHED sahaja.
+# Sumber kebenaran: proses mesti benar-benar ada sambungan aktif.
+# Zombie / proses pra-auth tanpa socket tidak akan masuk senarai.
+#
+# PENTING: proses dropbear/sshd juga memegang socket trafik yang di-forward
+# (ssh -L/-R/-D, proxy). Socket tu ada local port ephemeral, BUKAN port
+# perkhidmatan. Kita tapis ikut port listen (22/109/143 dsb.) supaya yang
+# diambil hanya socket sesi SSH sebenar, bukan trafik proxy pengguna.
+declare -A LIVE_PEER=()
+declare -A LISTEN_PORT=()
+
+map_listen_ports() {
+  local proc="$1" line la
+  LISTEN_PORT=()
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    la="$(awk '{ print $4 }' <<<"$line")"
+    LISTEN_PORT["${la##*:}"]=1
+  done < <(ss -Htlnp 2>/dev/null | awk '$1=="LISTEN"' | grep -F "\"$proc\"")
+}
+
+map_established() {
+  local proc="$1" line lport peer pid
+  LIVE_PEER=()
+  map_listen_ports "$proc"
+
+  ss -Htnp 2>/dev/null | awk '$1=="ESTAB"' | grep -F "\"$proc\"" > "$TMP_SS" || true
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+
+    # Hanya socket yang local port-nya port listen = sambungan sesi SSH
+    if [ "${#LISTEN_PORT[@]}" -gt 0 ]; then
+      lport="$(awk '{ print $4 }' <<<"$line")"; lport="${lport##*:}"
+      if [ -z "${LISTEN_PORT[$lport]:-}" ]; then
+        debug "$proc: langkau socket keluar local port $lport (trafik forward/proxy)"
+        continue
+      fi
+    fi
+
+    peer="$(awk '{ print $(NF-1) }' <<<"$line")"
+    while IFS= read -r pid; do
+      [ -n "$pid" ] && LIVE_PEER["$pid"]="$peer"
+    done < <(grep -o 'pid=[0-9]\+' <<<"$line" | cut -d= -f2 | sort -u)
+  done < "$TMP_SS"
+}
+
+journal_dropbear() {
+  local jargs=(--no-pager -b -u dropbear -o short-iso)
+  [ -n "$SEED_SINCE" ] && jargs+=(--since "$SEED_SINCE")
+  journalctl "${jargs[@]}" 2>/dev/null \
+    | sed -n "s/.*dropbear\[\([0-9]\+\)\].*auth succeeded for '\([^']\+\)'.* from \([0-9a-fA-F:.]\+\):\([0-9]\+\).*/\1 \2 \3 \4/p" \
+    > "$TMP_JOURNAL" || true
+}
+
+journal_sshd() {
+  local jargs=(--no-pager -b -u ssh -u sshd -o short-iso)
+  [ -n "$SEED_SINCE" ] && jargs+=(--since "$SEED_SINCE")
+  journalctl "${jargs[@]}" 2>/dev/null \
+    | sed -n 's/.*sshd\[\([0-9]\+\)\].*Accepted [^ ]* for \([^ ]\+\) from \([^ ]\+\) port \([0-9]\+\).*/\1 \2 \3 \4/p' \
+    > "$TMP_JOURNAL" || true
+}
+
 # Format baris output (tanpa kotak)
 ROW_FMT='%-7s %-14s %-24s %-7s %-5s\n'
 print_table_header() {
@@ -132,19 +205,14 @@ print_row() {
 echo
 echo "-----=[ Dropbear User Login ]=------"
 
-db_pids="$(ps -o pid= -C dropbear 2>/dev/null | tr -s ' \n' ' ' || true)"
-db_rows=0
+declare -A db_user db_ip db_port db_start db_total
+map_established dropbear
 
-if [ -z "${db_pids// /}" ]; then
-  echo "(no dropbear process found)"
+if [ "${#LIVE_PEER[@]}" -eq 0 ]; then
+  echo "(No User Login Detected)"
 else
-  declare -A db_user db_ip db_port db_start db_total
-
-  # Baca journal SEKALI sahaja, map pid -> user/ip/port
   if [ "$HAS_JOURNALCTL" -eq 1 ]; then
-    journalctl --no-pager -u dropbear --since "$SEED_SINCE" -o short-iso 2>/dev/null \
-      | sed -n "s/.*dropbear\[\([0-9]\+\)\].*auth succeeded for '\([^']\+\)'.* from \([0-9a-fA-F:.]\+\):\([0-9]\+\).*/\1 \2 \3 \4/p" \
-      > "$TMP_JOURNAL" || true
+    journal_dropbear
     while IFS=' ' read -r pid user ip port; do
       [ -z "${pid:-}" ] && continue
       [ -n "${user:-}" ] && db_user["$pid"]="$user"
@@ -153,41 +221,44 @@ else
     done < "$TMP_JOURNAL"
   fi
 
-  # Fallback alamat dari ss/lsof + masa mula
-  for pid in $db_pids; do
-    [ -z "$pid" ] && continue
-    if [ -z "${db_ip[$pid]:-}" ]; then
-      addr="$(get_addr_from_ss "$pid")"
-      [ -z "$addr" ] && addr="$(get_addr_from_lsof "$pid")"
-      if [ -n "$addr" ]; then
-        read -r _ip _port <<<"$(parse_peer "$addr")"
-        [ -n "${_ip:-}" ]   && db_ip["$pid"]="$_ip"
-        [ -n "${_port:-}" ] && db_port["$pid"]="$_port"
-      fi
-    fi
-    db_start["$pid"]="$(pid_start_epoch "$pid")"
-  done
-
-  # Kira total HANYA untuk baris yang akan dipapar
   show_pids=()
-  for pid in $db_pids; do
-    [ -z "$pid" ] && continue
+  for pid in "${!LIVE_PEER[@]}"; do
     user="${db_user[$pid]:-}"
-    ip="${db_ip[$pid]:-}"
-    [ -z "$user" ] || [ -z "$ip" ] && continue
+    if [ -z "$user" ]; then
+      debug "dropbear pid $pid: tiada rekod auth (pra-auth/belum login) — langkau"
+      continue
+    fi
+
+    jip="${db_ip[$pid]:-}"; jport="${db_port[$pid]:-}"
+    if [ -n "$jip" ] && ! peer_matches "$jip" "$jport" "${LIVE_PEER[$pid]}"; then
+      debug "dropbear pid $pid: journal ${jip}:${jport} != socket ${LIVE_PEER[$pid]} (PID diguna semula) — langkau"
+      continue
+    fi
+
     [ "$(lower "$user")" = "root" ] && [ "$SKIP_ROOT" -eq 1 ] && continue
+
     show_pids+=("$pid")
+    db_start["$pid"]="$(pid_start_epoch "$pid")"
     db_total["$user"]=$(( ${db_total["$user"]:-0} + 1 ))
   done
 
+  db_rows=0
   if [ "${#show_pids[@]}" -eq 0 ]; then
     echo "(No User Login Detected)"
   else
+    # Susun ikut masa mula (lama dulu)
+    ordered=()
+    while IFS=' ' read -r _ts p; do ordered+=("$p"); done < <(
+      for p in "${show_pids[@]}"; do printf '%s %s\n' "${db_start[$p]:-0}" "$p"; done | sort -n
+    )
+
     print_table_header
-    for pid in "${show_pids[@]}"; do
+    for pid in "${ordered[@]}"; do
       user="${db_user[$pid]}"
-      ip="${db_ip[$pid]}"
-      port="${db_port[$pid]:-}"
+      read -r ip port <<<"$(parse_peer "${LIVE_PEER[$pid]}")"
+      # Fallback: jika IPv6 tanpa port, guna nilai journal
+      [ -z "$ip" ] && ip="${db_ip[$pid]:-unknown}"
+      [ -z "$port" ] && port="${db_port[$pid]:-}"
       ipport="$ip"; [ -n "$port" ] && ipport="${ip}:${port}"
       print_row "$pid" "$user" "$ipport" "$(epoch_to_hm "${db_start[$pid]:-0}")" "${db_total[$user]:-1}"
       db_rows=$((db_rows + 1))
@@ -196,7 +267,7 @@ else
 fi
 
 echo
-if [ "$db_rows" -gt 0 ]; then
+if [ "${db_rows:-0}" -gt 0 ]; then
   echo "Total All Online Users: $db_rows"
 else
   echo "(No Dropbear Sessions Detected)"
@@ -210,86 +281,82 @@ echo
 echo "-----=[ OpenSSH User Login ]=------"
 
 declare -A s_user s_ip s_port s_start s_owner s_total
+map_established sshd
 
-# Journal: Debian/Ubuntu guna unit "ssh"; distro lain "sshd" — cuba kedua-duanya
-if [ "$HAS_JOURNALCTL" -eq 1 ]; then
-  journalctl --no-pager -u ssh -u sshd --since "$SEED_SINCE" -o short-iso 2>/dev/null \
-    | sed -n 's/.*sshd\[\([0-9]\+\)\].*Accepted [^ ]* for \([^ ]\+\) from \([^ ]\+\) port \([0-9]\+\).*/\1 \2 \3 \4/p' \
-    > "$TMP_JOURNAL" || true
-  while IFS=' ' read -r pid user ip port; do
-    [ -z "${pid:-}" ] && continue
-    [ -n "${user:-}" ] && s_user["$pid"]="$user"
-    [ -n "${ip:-}" ]   && s_ip["$pid"]="$ip"
-    [ -n "${port:-}" ] && s_port["$pid"]="$port"
-  done < "$TMP_JOURNAL"
-fi
+if [ "${#LIVE_PEER[@]}" -eq 0 ]; then
+  echo "(No User Login Detected)"
+  ssh_rows=0
+else
+  if [ "$HAS_JOURNALCTL" -eq 1 ]; then
+    journal_sshd
+    while IFS=' ' read -r pid user ip port; do
+      [ -z "${pid:-}" ] && continue
+      [ -n "${user:-}" ] && s_user["$pid"]="$user"
+      [ -n "${ip:-}" ]   && s_ip["$pid"]="$ip"
+      [ -n "${port:-}" ] && s_port["$pid"]="$port"
+    done < "$TMP_JOURNAL"
+  fi
 
-# Sambungan aktif dari ss
-ss -Htnp 2>/dev/null | grep -F '"sshd"' > "$TMP_SS" || true
+  show_pids=()
+  for pid in "${!LIVE_PEER[@]}"; do
+    user="${s_user[$pid]:-}"
 
-ssh_pids=()
-while IFS= read -r line; do
-  [ -z "$line" ] && continue
-  peer="$(awk '{ print $(NF-1) }' <<<"$line")"
-  # Boleh ada beberapa pid= dalam satu baris users:(...)
-  while read -r pid; do
-    [ -z "$pid" ] && continue
-    if [ -z "${s_start[$pid]:-}" ]; then
-      ssh_pids+=("$pid")
-      s_start["$pid"]="$(pid_start_epoch "$pid")"
+    # Tolak rekod journal yang tidak padan dengan socket sebenar
+    if [ -n "$user" ] && [ -n "${s_ip[$pid]:-}" ] \
+       && ! peer_matches "${s_ip[$pid]}" "${s_port[$pid]:-}" "${LIVE_PEER[$pid]}"; then
+      debug "sshd pid $pid: journal ${s_ip[$pid]}:${s_port[$pid]:-} != socket ${LIVE_PEER[$pid]} (PID diguna semula) — buang rekod journal"
+      user=""
     fi
-    read -r _ip _port <<<"$(parse_peer "$peer")"
-    [ -n "${s_ip[$pid]:-}" ]   || { [ -n "${_ip:-}" ] && s_ip["$pid"]="$_ip"; }
-    [ -n "${s_port[$pid]:-}" ] || { [ -n "${_port:-}" ] && s_port["$pid"]="$_port"; }
 
-    owner="$(ps -p "$pid" -o user= 2>/dev/null | tr -d ' ' || true)"
-    s_owner["$pid"]="$owner"
-
-    if [ -z "${s_user[$pid]:-}" ]; then
+    # Fallback 1: nama dari cmd proses (sshd: user@pts/N)
+    if [ -z "$user" ]; then
       cmd="$(ps -p "$pid" -o cmd= 2>/dev/null || true)"
-      if [[ "$cmd" =~ sshd:[[:space:]]+([^@[:space:]]+) ]]; then
-        s_user["$pid"]="${BASH_REMATCH[1]}"
+      if [[ "$cmd" =~ sshd:[[:space:]]+([^@[:space:]]+)@ ]]; then
+        user="${BASH_REMATCH[1]}"
       fi
     fi
-  done < <(grep -o 'pid=[0-9]\+' <<<"$line" | cut -d= -f2 | sort -u)
-done < "$TMP_SS"
 
-# Susun ikut masa mula (terbaru dahulu) dan tapis
-sorted_pids=()
-if [ "${#ssh_pids[@]}" -gt 0 ]; then
-  while IFS=$'\t' read -r _ts pid; do
-    sorted_pids+=("$pid")
-  done < <(for p in "${ssh_pids[@]}"; do printf '%s\t%s\n' "${s_start[$p]:-0}" "$p"; done | sort -rn)
-fi
+    # Fallback 2: pemilik proses (monitor sshd = root, jadi hanya jika bukan root)
+    if [ -z "$user" ]; then
+      owner="$(ps -p "$pid" -o user= 2>/dev/null | tr -d ' ' || true)"
+      s_owner["$pid"]="$owner"
+      user="$owner"
+    fi
 
-show_pids=()
-for pid in "${sorted_pids[@]}"; do
-  user="${s_user[$pid]:-${s_owner[$pid]:-}}"
-  [ -z "$user" ] && continue
-  user_lc="$(lower "$user")"
-  [ "$user_lc" = "root" ] && [ "$SKIP_ROOT" -eq 1 ] && continue
-  [ "$user_lc" = "sshd" ] || [ "$user_lc" = "unknown" ] && continue
-  show_pids+=("$pid")
-  s_total["$user"]=$(( ${s_total["$user"]:-0} + 1 ))
-done
+    [ -z "$user" ] && { debug "sshd pid $pid: tiada user — langkau"; continue; }
+    user_lc="$(lower "$user")"
+    [ "$user_lc" = "root" ] && [ "$SKIP_ROOT" -eq 1 ] && continue
+    { [ "$user_lc" = "sshd" ] || [ "$user_lc" = "unknown" ]; } && continue
 
-ssh_rows=0
-if [ "${#show_pids[@]}" -eq 0 ]; then
-  echo "(No User Login Detected)"
-else
-  print_table_header
-  for pid in "${show_pids[@]}"; do
-    user="${s_user[$pid]:-${s_owner[$pid]}}"
-    ip="${s_ip[$pid]:-unknown}"
-    port="${s_port[$pid]:-}"
-    ipport="$ip"; [ -n "$port" ] && ipport="${ip}:${port}"
-    print_row "$pid" "$user" "$ipport" "$(epoch_to_hm "${s_start[$pid]:-0}")" "${s_total[$user]:-1}"
-    ssh_rows=$((ssh_rows + 1))
+    show_pids+=("$pid")
+    s_start["$pid"]="$(pid_start_epoch "$pid")"
+    s_total["$user"]=$(( ${s_total["$user"]:-0} + 1 ))
   done
+
+  ssh_rows=0
+  if [ "${#show_pids[@]}" -eq 0 ]; then
+    echo "(No User Login Detected)"
+  else
+    ordered=()
+    while IFS=' ' read -r _ts p; do ordered+=("$p"); done < <(
+      for p in "${show_pids[@]}"; do printf '%s %s\n' "${s_start[$p]:-0}" "$p"; done | sort -rn
+    )
+
+    print_table_header
+    for pid in "${ordered[@]}"; do
+      user="${s_user[$pid]:-${s_owner[$pid]:-unknown}}"
+      read -r ip port <<<"$(parse_peer "${LIVE_PEER[$pid]}")"
+      [ -z "$ip" ] && ip="${s_ip[$pid]:-unknown}"
+      [ -z "$port" ] && port="${s_port[$pid]:-}"
+      ipport="$ip"; [ -n "$port" ] && ipport="${ip}:${port}"
+      print_row "$pid" "$user" "$ipport" "$(epoch_to_hm "${s_start[$pid]:-0}")" "${s_total[$user]:-1}"
+      ssh_rows=$((ssh_rows + 1))
+    done
+  fi
 fi
 
 echo
-if [ "$ssh_rows" -gt 0 ]; then
+if [ "${ssh_rows:-0}" -gt 0 ]; then
   echo "Total All Online Users: $ssh_rows"
 else
   echo "(No OpenSSH Sessions Detected)"
