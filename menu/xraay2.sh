@@ -243,7 +243,7 @@ limit_change_menu() {
 
 limit_engine_ensure() {
     limit_db_init
-    if ! grep -q "XRAY_LIMIT_VERSION=5" "$LIMIT_BIN" 2>/dev/null; then
+    if ! grep -q "XRAY_LIMIT_VERSION=6" "$LIMIT_BIN" 2>/dev/null; then
         cat > "$LIMIT_BIN" <<'XRAYLIMITENGINE'
 #!/bin/bash
 # ============================================================
@@ -256,7 +256,7 @@ limit_engine_ensure() {
 #   xray-limit status          -> senarai limit & penggunaan
 #   xray-limit unblock <user>  -> buka blok + reset quota
 # ============================================================
-XRAY_LIMIT_VERSION=5
+XRAY_LIMIT_VERSION=6
 
 DB="${XRAY_LIMIT_DB:-/etc/xray/limit.db}"
 ACCESS="${XRAY_LIMIT_ACCESS:-/var/log/xray/access.log}"
@@ -402,7 +402,7 @@ quota_update_api() {
             }
             # kekalkan snapshot user yang idle (tiada trafik baru)
             for (u in prev) if (!(u in new)) new[u] = prev[u]
-            for (u in new) print u "|" new[u] > snap
+            for (u in new) print u "|" sprintf("%.0f", new[u]) > snap
         }
     ' "$snap" "$CUR_TMP"
 
@@ -412,7 +412,7 @@ quota_update_api() {
 add_usage() {
     local u="$1" b="$2"
     grep -q "^${u}|" "$DB" 2>/dev/null || return 0
-    awk -F'|' -v u="$u" -v b="$b" 'BEGIN{OFS="|"} $1==u{$4=$4+b} {print}' "$DB" > "${DB}.tmp" && mv "${DB}.tmp" "$DB"
+    awk -F'|' -v u="$u" -v b="$b" 'BEGIN{OFS="|"} $1==u{$4=sprintf("%.0f", $4+b)} {print}' "$DB" > "${DB}.tmp" && mv "${DB}.tmp" "$DB"
 }
 
 # ---------- IP ----------
