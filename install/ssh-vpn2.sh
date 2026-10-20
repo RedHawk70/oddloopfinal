@@ -357,6 +357,7 @@ wget -O ram "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/syst
 wget -O renew-ssh "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/renew-user/renew-ssh.sh"
 wget -O autokill "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/autokill.sh"
 wget -O ceklim "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/cek-user/ceklim.sh"
+wget -O cek-quota-xray "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/cek-user/cek-quota-xray.sh"
 wget -O tendang "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/tendang.sh"
 wget -O clear-log "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/clear-log.sh"
 wget -O change-port "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/change.sh"
@@ -412,6 +413,7 @@ chmod +x renew-ssh
 chmod +x clear-log
 chmod +x change-port
 chmod +x restore
+chmod +x cek-quota-xray
 chmod +x port-ovpn
 chmod +x port-ssl
 chmod +x port-squid
