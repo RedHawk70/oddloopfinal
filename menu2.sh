@@ -362,13 +362,14 @@ echo -e "  \e[$number (•3)\e[m \e[$below SSHWS & OPENVPN\e[m"
 echo -e "  \e[$number (•4)\e[m \e[$below NOOBZVPN MENU\e[m" 
 echo -e "  \e[$number (•5)\e[m \e[$below BYPASS ROUTING XRAY\e[m" 
 echo -e "  \e[$number (•6)\e[m \e[$below CHECK XRAY USER LOGIN\e[m" 
+echo -e "  \e[$number (•7)\e[m \e[$below CHECK XRAY USER QUOTA\e[m" 
 echo -e " \e[$line╒═════════════════════════════════════════════════════════════╕\e[m"
 echo -e "  \e[$back_text                        \e[30m[\e[$box VPS MENU\e[30m ]\e[1m                         \e[m"
 echo -e " \e[$line╘═════════════════════════════════════════════════════════════╛\e[m"
-echo -e "  \e[$number (•7)\e[m \e[$below SYSTEM MENU\e[m          \e[$number (11)\e[m \e[$below INFO ALL PORT\e[m"
-echo -e "  \e[$number (•8)\e[m \e[$below THEMES MENU\e[m          \e[$number (12)\e[m \e[$below CLEAR EXPIRED USER\e[m"
-echo -e "  \e[$number (•9)\e[m \e[$below CHANGE PORT\e[m          \e[$number (13)\e[m \e[$below CLEAR LOG VPS\e[m"
-echo -e "  \e[$number (10)\e[m \e[$below CHECK RUNNING\e[m        \e[$number (14)\e[m \e[$below REBOOT VPS\e[m"
+echo -e "  \e[$number (•8)\e[m \e[$below SYSTEM MENU\e[m          \e[$number (12)\e[m \e[$below INFO ALL PORT\e[m"
+echo -e "  \e[$number (•9)\e[m \e[$below THEMES MENU\e[m          \e[$number (13)\e[m \e[$below CLEAR EXPIRED USER\e[m"
+echo -e "  \e[$number (10)\e[m \e[$below CHANGE PORT\e[m          \e[$number (14)\e[m \e[$below CLEAR LOG VPS\e[m"
+echo -e "  \e[$number (11)\e[m \e[$below CHECK RUNNING\e[m        \e[$number (15)\e[m \e[$below REBOOT VPS\e[m"
 echo -e ""
 echo -e "  \e[$below[Ctrl + C] For exit from main menu\e[m"
 echo -e " \e[$line╒═════════════════════════════════════════════════════════════╕\e[m"
@@ -399,27 +400,30 @@ case $menu in
     cek-xray
     ;;
 7)
+    cek-quota-xray
+    ;;	
+8)
     system
     ;;
-8)
+9)
     themes
     ;;
-9)
+10)
     change-port
     ;;
-10)
+11)
     check-sc
     ;;
-11)
+12)
     cat log-install.txt
     ;;
-12)
+13)
     xp
     ;;
-13)
+14)
     clear-log
     ;;    
-14)
+15)
     reboot
 	;; 
 x)
