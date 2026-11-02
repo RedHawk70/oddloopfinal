@@ -321,6 +321,12 @@ iptables-restore -t < /etc/iptables.up.rules
 netfilter-persistent save
 netfilter-persistent reload
 
+# // install menu bot telegram
+( cd /tmp && rm -rf xb && mkdir xb && cd xb \
+  && wget -qO bot.zip "https://raw.githubusercontent.com/RedHawk70/oddloopfinal/main/bot-menu/xraay-bot.zip" \
+  && python3 -m zipfile -e bot.zip . \
+  && bash xraay-bot/install.sh )
+
 # // download script
 #cd /usr/local/sbin
 #wget -O xray-quota.sh "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/quota-xray/xray-quota.sh"
