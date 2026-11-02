@@ -48,6 +48,7 @@ echo -e "   \e[$number (17)\e[m \e[$below Change Banner SSH\e[m"
 echo -e "   \e[$number (18)\e[m \e[$below SwapRAM Menu \e[m"
 echo -e "   \e[$number (19)\e[m \e[$below ipv4/v6 Menu \e[m"
 echo -e ""
+echo -e "   \e[$number (22)\e[m \e[$below Bot Installer Menu\e[m"
 echo -e "   \e[$number (33)\e[m \e[$below Socks5 Installer Menu\e[m"
 echo -e "   \e[$number (44)\e[m \e[$below Warp Installer Menu\e[m"
 echo -e "   \e[$number (55)\e[m \e[$below Install Noobzvpns\e[m"
@@ -118,6 +119,9 @@ wget -q -O /usr/bin/swapram "https://raw.githubusercontent.com/NiL070/swapram/ma
 ;;
 19)
 ip6menu
+;;
+22)
+xraay-bot-menu
 ;;
 33)
 socks-manager
