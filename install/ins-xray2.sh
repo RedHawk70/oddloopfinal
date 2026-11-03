@@ -36,11 +36,145 @@ touch /usr/local/etc/xray/akunxtr.conf
 touch /var/log/xray/access.log;
 touch /var/log/xray/error.log;
 
-# // VERSION XRAY
-export version="$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases | grep tag_name | sed -E 's/.*"v(.*)".*/\1/' | head -n 1)"
+set -Eeuo pipefail
 
-# // INSTALL CORE XRAY (LATEST)
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install -u www-data
+# ------------------------- TETAPAN ----------------------------
+FORK_URL="${FORK_URL:-https://github.com/RedHawk70/xraycore/releases/download/xrmodv26.2.6-1/Xray-linux-64-v26.2.6-1}"
+BIN="${BIN:-/usr/local/bin/xray}"
+BAK="${BAK:-/usr/local/bin/xray.bakk}"
+INSTALLER_URL="https://github.com/XTLS/Xray-install/raw/main/install-release.sh"
+
+red=$'\033[31m'; grn=$'\033[32m'; cyn=$'\033[36m'; rst=$'\033[0m'
+step() { printf '\n%s==> %s%s\n' "$cyn" "$*" "$rst"; }
+ok()   { printf '%s  [OK] %s%s\n' "$grn" "$*" "$rst"; }
+warn() { printf '\033[33m  [!] %s%s\n' "$*" "$rst"; }
+die()  { printf '%s  [X] %s%s\n' "$red" "$*" "$rst" >&2; exit 1; }
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+# --------------------- SEMAKAN AWAL ---------------------------
+step "Semakan awal"
+[[ "${EUID}" -eq 0 ]] || die "Kena jalan sebagai root. Guna: sudo bash $0"
+[[ "$(uname -s)" == "Linux" ]] || die "Skrip ni untuk Linux sahaja."
+case "$(uname -m)" in
+  x86_64 | amd64) ;;
+  *) die "Aset fork ni untuk x86_64/amd64 sahaja, bukan $(uname -m). Cari aset lain di https://github.com/RedHawk70/xraycore/releases" ;;
+esac
+command -v curl >/dev/null 2>&1 || die "curl tiada. Pasang dulu: apt-get update && apt-get install -y curl"
+ok "root, Linux $(uname -m), curl ada"
+
+# ------------------------ ROLLBACK ----------------------------
+if [[ "${1:-}" == "--rollback" ]]; then
+  step "Rollback ke binari asal"
+  [[ -f "$BAK" ]] || die "Tiada backup di $BAK — tak boleh rollback."
+  install -m 0755 -o root -g root "$BAK" "$BIN"
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl restart xray 2>/dev/null || true
+  fi
+  ok "Dah pulih ke $BAK — $("$BIN" version 2>/dev/null | head -n1)"
+  exit 0
+fi
+
+# ---------------- 1. ASAS: SERVICE + CONFIG + GEODATA ---------
+step "Pasang asas Xray (systemd/OpenRC service, config, geodata)"
+if [[ -x "$BIN" ]] && { [[ -f /etc/systemd/system/xray.service ]] || [[ -f /etc/init.d/xray ]]; }; then
+  ok "Asas dah wujud — langkau langkah ni."
+else
+  # NOTA: JANGAN guna '-u www-data'. Flag tu dah DIBUANG dari skrip rasmi
+  # (commit 1142d3d, 2026-10-18). Skrip sekarang auto-cipta user 'xray'.
+  curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 \
+    -o "$TMP/install-release.sh" "$INSTALLER_URL" \
+    || die "Gagal muat turun install-release.sh — semak internet/DNS VPS."
+
+  grep -q 'judgment_parameters' "$TMP/install-release.sh" \
+    || die "Skrip install tak lengkap (mungkin dapat halaman HTML ralat)."
+
+  bash "$TMP/install-release.sh" install \
+    || die "Pemasangan asas gagal. Baca ralat di atas (selalunya DNS, tiada systemd, atau bukan root)."
+  ok "Asas siap dipasang."
+fi
+
+# ------------------- 2. MUAT TURUN BINARI ---------------------
+step "Muat turun binari fork"
+NEW="$TMP/xray.new"
+curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 --progress-bar \
+  -o "$NEW" "$FORK_URL" \
+  || die "Muat turun gagal (404 / TLS / rangkaian). Uji: curl -I \"$FORK_URL\""
+
+size=$(stat -c '%s' "$NEW" 2>/dev/null || echo 0)
+(( size > 5000000 )) || die "Fail terlalu kecil (${size} bait) — itu bukan binari, mungkin halaman ralat."
+
+magic=$(head -c 4 "$NEW" | od -An -tx1 | tr -d ' \n')
+[[ "$magic" == "7f454c46" ]] || die "Bukan binari ELF (magic: $magic)."
+
+chmod 0755 "$NEW"
+"$NEW" version >/dev/null 2>&1 \
+  || die "Binari tak boleh jalan pada CPU/kernel ni (glibc terlalu lama?)."
+ok "Binari sah: $("$NEW" version 2>/dev/null | head -n1)"
+
+# ------------------- 3. BACKUP + TUKAR ------------------------
+step "Backup & ganti binari"
+if [[ -f "$BIN" ]]; then
+  if [[ ! -f "$BAK" ]]; then
+    cp -a "$BIN" "$BAK"
+    ok "Backup binari asal: $BAK"
+  else
+    ok "Backup sedia ada dikekalkan: $BAK"
+  fi
+else
+  warn "Tiada binari lama untuk dibackup."
+fi
+
+install -m 0755 -o root -g root "$NEW" "$BIN"
+
+if ! "$BIN" version >/dev/null 2>&1; then
+  if [[ -f "$BAK" ]]; then
+    install -m 0755 -o root -g root "$BAK" "$BIN"
+    die "Binari fork gagal jalan — dah auto-rollback ke backup."
+  fi
+  die "Binari fork gagal jalan dan tiada backup."
+fi
+ok "Terpasang: $("$BIN" version 2>/dev/null | head -n1)"
+
+# ---------------------- 4. RESTART ----------------------------
+step "Restart service"
+if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files 2>/dev/null | grep -q '^xray\.service'; then
+  systemctl daemon-reload || true
+  systemctl enable xray >/dev/null 2>&1 || true
+  systemctl restart xray || true
+  sleep 2
+  if systemctl is-active --quiet xray; then
+    ok "xray.service aktif dan berjalan."
+  else
+    warn "xray.service gagal start — tunjuk log:"
+    journalctl -u xray -n 20 --no-pager 2>/dev/null || true
+    if [[ -f "$BAK" ]]; then
+      install -m 0755 -o root -g root "$BAK" "$BIN"
+      systemctl restart xray 2>/dev/null || true
+      sleep 2
+      if systemctl is-active --quiet xray; then
+        ok "Dah rollback ke binari asal — service pulih. Masalahnya pada binari fork."
+      else
+        die "Service tetap gagal walaupun lepas rollback. Itu masalah config, bukan binari. Semak: journalctl -u xray -n 50 --no-pager"
+      fi
+    else
+      die "Service gagal start. Semak: journalctl -u xray -n 50 --no-pager"
+    fi
+  fi
+elif command -v rc-service >/dev/null 2>&1 && [[ -f /etc/init.d/xray ]]; then
+  rc-service xray restart || true
+  sleep 2
+  rc-service xray status || warn "Service tak aktif — semak config."
+else
+  warn "Tiada systemd/OpenRC dikesan. Binari dah dipasang; start Xray manual."
+fi
+
+step "Selesai"
+echo "  Binari : $BIN"
+echo "  Config : /usr/local/etc/xray/config.json"
+echo "  Backup : $BAK"
+echo "  Rollback: sudo bash $0 --rollback"
 
 systemctl stop nginx
 
@@ -771,9 +905,6 @@ chmod +x port-xray
 chmod +x certv2ray
 chmod +x trojaan
 chmod +x xraay
-
-# // Install XrayCore Mod V.26.2.6-1 (Custompath)
-mv /usr/local/bin/xray /usr/local/bin/xray.bakk && wget -q -O /usr/local/bin/xray "https://github.com/RedHawk70/xraycore/releases/download/xrmodv26.2.6-1/Xray-linux-64-v26.2.6-1" && chmod 755 /usr/local/bin/xray
 
 cd
 rm -f ins-xray.sh
