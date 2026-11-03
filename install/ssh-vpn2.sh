@@ -328,19 +328,9 @@ netfilter-persistent reload
   && bash xraay-bot/install.sh )
 
 # // download script
-#cd /usr/local/sbin
-#wget -O xray-quota.sh "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/quota-xray/xray-quota.sh"
-#wget -O menu-quota-vmess.sh "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/quota-xray/menu-quota-vmess.sh"
-#chmod +x xray-quota.sh
-#chmod +x menu-quota-vmess.sh
-#sed -i 's/\r$//' /usr/local/sbin/xray-quota.sh
-#sed -i 's/\r$//' /usr/local/sbin/menu-quota-vmess.sh
-#xray-quota.sh
-
-# // download script
 cd /usr/bin
-#wget -O quota-vless "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/menu/quota-vless.sh"
 wget -O proxy-warp "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/proxy-warp.sh"
+wget -O install "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/bot-menu/install.sh"
 wget -O socks-manager "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/socks-manager.sh"
 wget -O change-dropbear "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/change-dropbear.sh"
 wget -O menu-noobzvpn "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/menu-noobzvpn.sh"
@@ -401,6 +391,7 @@ wget -O dns "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/syst
 wget -O netf "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/netf.sh"
 chmod +x add-host
 chmod +x menu
+chmod +x install
 chmod +x add-ssh
 chmod +x trial
 chmod +x del-ssh
