@@ -10,7 +10,10 @@ OS=$(hostnamectl 2>/dev/null | awk -F': ' '/Operating System/ {print $2; exit}')
 OS2=$(lsb_release -ds)
 CITY=$(curl -s ipinfo.io/city)
 WKT=$(curl -s ipinfo.io/timezone)
-IPV6=$(curl -s -6 ipv6.icanhazip.com)
+# Detect IPv6 secara tempatan (pantas, tak hang bila IPv6 off)
+# ipv6_kernel: 0 = IPv6 aktif, 1 = dimatikan
+ipv6_kernel=$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || echo 1)
+IPV6=$(ip -6 addr show scope global 2>/dev/null | awk '/inet6/ {print $2; exit}' | cut -d/ -f1)
 clear
 
 # detail cpu ram
@@ -290,6 +293,12 @@ row_info "Kernel"      "$(uname -r)"
 row_info "RAM"         "$uram MB / $tram MB"
 row_info "Uptime"      "$uptime"
 row_info "IP Address"  "$IPVPS"
+# Papar IPv6 hanya jika IPv6 aktif (dikesan tempatan)
+if [ "${ipv6_kernel:-1}" = "0" ] && [ -n "$IPV6" ]; then
+  row_info "IPv6 Addr"   "$IPV6"
+elif [ "${ipv6_kernel:-1}" = "0" ]; then
+  row_info "IPv6 Addr"   "Enabled (no global address)"
+fi
 row_info "Domain"      "$domain"
 row_info "XrayCore"    "$current_version"
 row_info "Provider"    "$creditt"
