@@ -324,7 +324,7 @@ netfilter-persistent reload
 # // download script
 cd /usr/bin
 wget -O proxy-warp "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/proxy-warp.sh"
-wget -O install "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/bot-menu/install.sh"
+#wget -O install "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/bot-menu/install.sh"
 wget -O socks-manager "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/socks-manager.sh"
 wget -O change-dropbear "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/change-dropbear.sh"
 wget -O menu-noobzvpn "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/menu-noobzvpn.sh"
@@ -385,7 +385,7 @@ wget -O dns "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/syst
 wget -O netf "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/netf.sh"
 chmod +x add-host
 chmod +x menu
-chmod +x install
+#chmod +x install
 chmod +x add-ssh
 chmod +x trial
 chmod +x del-ssh
