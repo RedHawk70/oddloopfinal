@@ -1724,6 +1724,7 @@ config_provider_color () {
 		8) printf '\033[38;5;197m';;
 		9) printf '\033[38;5;44m';;
 		10) printf '\033[38;5;160m';;
+		11) printf '\033[38;5;202m';;
 	esac
 }
 
@@ -1739,6 +1740,7 @@ config_provider_name () {
 		8) echo "tunetalk";;
 		9) echo "tonewow";;
 		10) echo "redone";;
+		11) echo "unifi";;
 	esac
 }
 
@@ -1981,11 +1983,12 @@ config_list_menu () {
 		echo "   8. $(config_provider_color 8)Tunetalk${R}"
 		echo "   9. $(config_provider_color 9)Tonewow${R}"
 		echo "   10. $(config_provider_color 10)Redone${R}"
+		echo "   11. $(config_provider_color 11)Unifi${R}"
 		echo "   x. Back to menu xray"
 		echo ""
-		read -rp "   Pilih [1-10, x]: " prov
+		read -rp "   Pilih [1-11, x]: " prov
 		case "$prov" in
-			1|2|3|4|5|6|7|8|9|10) config_provider_submenu "$prov";;
+			1|2|3|4|5|6|7|8|9|10|11) config_provider_submenu "$prov";;
 			x|X) break;;
 			*) ;;
 		esac
