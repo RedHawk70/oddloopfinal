@@ -1392,16 +1392,16 @@ config_default_path () {
 }
 
 config_build_link () {
-	local mode="$1" proto="$2" addr="$3" path="$4" extra="$5"
+	local mode="$1" proto="$2" addr="$3" path="$4" extra="$5" host="${6:-${domain:-$3}}"
 	case "$proto" in
-		1) echo "trojan://${user}@${addr}:${trws}?path=${path}&security=tls&host=bug.com&type=ws&sni=${extra}#${user}";;
+		1) echo "trojan://${user}@${addr}:${trws}?path=${path}&security=tls&host=${host}&type=ws&sni=${extra}#${user}";;
 		2) echo "trojan://${user}@${addr}:${trnone}?path=${path}&security=none&host=${extra}&type=ws#${user}";;
 	esac
 }
 
 config_edit () {
 	local pfile="$1"
-	local cname proto addr cpath dpath extra link mode
+	local cname proto addr cpath dpath extra host link mode
 	mode="${CFGMODE:-trojan}"
 	echo ""
 	read -rp "   Nama config: " cname
@@ -1415,6 +1415,8 @@ config_edit () {
 	if ! [[ "$proto" =~ ^[1-2]$ ]]; then echo "   Protocol tidak sah."; sleep 2; return; fi
 	read -rp "   Address (Enter untuk ${domain}): " addr
 	[[ -z "$addr" ]] && addr="${domain}"
+	read -rp "   Host (Enter untuk ${domain}): " host
+	host="${host:-$domain}"
 	dpath="$(config_default_path "$proto")"
 	read -rp "   Path (Enter untuk ${dpath}): " cpath
 	[[ -z "$cpath" ]] && cpath="${dpath}"
@@ -1422,13 +1424,17 @@ config_edit () {
 		read -rp "   SNI (Enter untuk ${domain}): " extra
 		[[ -z "$extra" ]] && extra="${domain}"
 	else
-		read -rp "   Host (Enter untuk ${domain}): " extra
-		[[ -z "$extra" ]] && extra="${domain}"
+		extra="$host"
+		host=""
 	fi
-	link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra")"
+	link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra" "$host")"
 	mkdir -p "$CONFIGLIST_DIR"
 	# Simpan sebagai template (tanpa user) supaya boleh guna semula untuk semua user
-	printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$cname" "$mode" "$proto" "$addr" "$cpath" "$extra" >> "$pfile"
+	local -a fields=("$cname" "$mode" "$proto" "$addr" "$cpath" "$extra")
+	# Host TLS disimpan di kolum ketujuh, selepas SNI.
+	[[ -n "$host" ]] && fields+=("$host")
+	local IFS=$'\t'
+	printf '%s\n' "${fields[*]}" >> "$pfile"
 	echo ""
 	echo "   Config disimpan:"
 	echo "   ════════════════════════════════════"
@@ -1440,7 +1446,7 @@ config_edit () {
 
 config_list () {
 	local pfile="$1"
-	local cname mode proto addr cpath extra link found curmode
+	local cname mode proto addr cpath extra host link found curmode
 	clear
 	echo ""
 	if [[ -z "$user" ]]; then
@@ -1457,7 +1463,7 @@ config_list () {
 	fi
 	curmode="${CFGMODE:-trojan}"
 	found=0
-	while IFS=$'\t' read -r cname mode proto addr cpath extra; do
+	while IFS=$'\t' read -r cname mode proto addr cpath extra host; do
 		[[ -z "$cname" ]] && continue
 		# Sokong format lama tanpa medan mode: anggap trojan.
 		# Abaikan template mod lain (vmess/vless/xtls) yang berkongsi folder config.
@@ -1466,7 +1472,7 @@ config_list () {
 		fi
 		[[ "$mode" != "$curmode" ]] && continue
 		# Bina semula link ikut user semasa
-		link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra")"
+		link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra" "$host")"
 		echo "══════════════════════════════════"
 		echo "Link ${cname}  : ${link}"
 		found=1
