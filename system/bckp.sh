@@ -1,36 +1,34 @@
 #!/bin/bash
-#wget https://github.com/${GitUser}/
-GitUser="RedHawk70"
-#IZIN SCRIPT
-MYIP=$(curl -sS ipv4.icanhazip.com)
-MYIP=$(curl -s ipinfo.io/ip )
-MYIP=$(curl -sS ipv4.icanhazip.com)
-MYIP=$(curl -sS ifconfig.me )
 clear
-IP=$(wget -qO- icanhazip.com);
+IP=$(wget -qO- https://icanhazip.com) || exit 1
+[[ "$IP" =~ ^[0-9a-fA-F:.]+$ ]] || { echo "IP VPS tidak sah." >&2; exit 1; }
 date=$(date +"%Y-%m-%d")
 email=$(cat /home/email)
-echo Directory Created
-mkdir /root/backup
-sleep 1
+umask 077
+workdir=$(mktemp -d) || exit 1
+trap 'rm -rf -- "$workdir"' EXIT
+cd "$workdir" || exit 1
+mkdir backup || exit 1
 echo Start Backup
-clear
-cp /etc/passwd backup/
-cp /etc/group backup/
-cp /etc/shadow backup/
-cp /etc/gshadow backup/
-cp -r /etc/wireguard backup/wireguard
-cp /etc/shadowsocks-libev/akun.conf backup/ss.conf
-cp -r /var/lib/premium-script/ backup/premium-script
-cp -r /usr/local/etc/xray backup/xray
-cp -r /etc/trojan-go backup/trojan-go
-cp -r /usr/local/shadowsocksr/ backup/shadowsocksr
-cp /etc/crontab backup/crontab
-cp -r /home/vps/public_html backup/public_html
-cd /root
-zip -r $IP-$date.zip backup > /dev/null 2>&1
-rclone copy /root/$IP-$date.zip dr:backup/
-url=$(rclone link dr:backup/$IP-$date.zip)
+cp -r /usr/local/etc/xray backup/xray || exit 1
+if [[ -d /etc/xray/configlist ]]; then
+    cp -r /etc/xray/configlist backup/configlist || exit 1
+fi
+# Panel guna IP VPS apabila fail domain tiada.
+if [[ ! -s backup/xray/domain && "$IP" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+    printf '%s\n' "$IP" > backup/source-domain || exit 1
+fi
+cp /etc/passwd /etc/group /etc/shadow /etc/gshadow backup/ || exit 1
+[[ ! -d /etc/wireguard ]] || cp -r /etc/wireguard backup/wireguard || exit 1
+[[ ! -f /etc/shadowsocks-libev/akun.conf ]] || cp /etc/shadowsocks-libev/akun.conf backup/ss.conf || exit 1
+[[ ! -d /var/lib/premium-script ]] || cp -r /var/lib/premium-script backup/premium-script || exit 1
+[[ ! -d /etc/trojan-go ]] || cp -r /etc/trojan-go backup/trojan-go || exit 1
+[[ ! -d /usr/local/shadowsocksr ]] || cp -r /usr/local/shadowsocksr backup/shadowsocksr || exit 1
+[[ ! -f /etc/crontab ]] || cp /etc/crontab backup/crontab || exit 1
+[[ ! -d /home/vps/public_html ]] || cp -r /home/vps/public_html backup/public_html || exit 1
+zip -qr "$IP-$date.zip" backup || exit 1
+rclone copy "$workdir/$IP-$date.zip" dr:backup/ || exit 1
+url=$(rclone link "dr:backup/$IP-$date.zip") || exit 1
 id=(`echo $url | grep '^https' | cut -d'=' -f2`)
 link="https://drive.google.com/u/4/uc?id=${id}&export=download"
 echo -e "The following is a link to your vps data backup file.
@@ -42,6 +40,4 @@ $link
 If you want to restore data, please enter the link above.
 
 Thank You For Using Our Services" | mail -s "Backup Data" $email
-rm -rf /root/backup
-rm -r /root/$IP-$date.zip
 echo Done
