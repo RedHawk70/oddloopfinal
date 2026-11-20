@@ -7,7 +7,6 @@
 # Paparan     : menyesuaikan lebar ikut saiz terminal (tput cols)
 #
 
-clear
 LIMIT_DB="${LIMIT_DB:-/etc/xray/limit.db}"
 CFG1="${XRAY_CFG:-/usr/local/etc/xray/config.json}"
 CFG2="${XRAY_CFG_NONE:-/usr/local/etc/xray/none.json}"
@@ -64,6 +63,104 @@ apply_cleanup() {
     CLEANED_COUNT="$(printf '%s\n' "$removed" | grep -c .)"
 }
 
+# Import user yang belum berdaftar selepas restore.
+refresh_quota_statistics() (
+    files=()
+    [ -f "$CFG1" ] && files+=("$CFG1")
+    [ -f "$CFG2" ] && files+=("$CFG2")
+    if [ "${#files[@]}" -eq 0 ]; then
+        echo " Config Xray tidak dijumpai: $CFG1 / $CFG2"
+        exit 1
+    fi
+
+    RAW="$(
+        for f in "${files[@]}"; do
+            awk '
+                /^[[:space:]]*#vms /       { print $2 "|vmess";  next }
+                /^[[:space:]]*#vls /       { print $2 "|vless";  next }
+                /^[[:space:]]*#vls-http /  { print $2 "|vless";  next }
+                /^[[:space:]]*#vls-xhttp / { print $2 "|vless";  next }
+                /^[[:space:]]*#vxtls /     { print $2 "|xtls";   next }
+                /^[[:space:]]*#trws /      { print $2 "|trojan"; next }
+                {
+                    while (match($0, /"email"[[:space:]]*:[[:space:]]*"[^"]+"/)) {
+                        s=substr($0, RSTART, RLENGTH)
+                        $0=substr($0, RSTART + RLENGTH)
+                        sub(/.*"email"[[:space:]]*:[[:space:]]*"/, "", s)
+                        sub(/"$/, "", s)
+                        sub(/^blocked-/, "", s)
+                        if (s != "") print s "|unknown"
+                    }
+                }' "$f" || exit 1
+        done
+    )" || exit 1
+
+    # gabung: pilih proto sebenar (bukan unknown) jika ada
+    USERS="$(printf '%s\n' "$RAW" | awk -F'|' '
+        $1 == "" { next }
+        { if (!($1 in proto) || proto[$1] == "unknown") proto[$1] = $2 }
+        END { for (u in proto) print u "|" proto[u] }
+    ' | sort)"
+
+    if [ -z "$USERS" ]; then
+        echo "Tiada user dijumpai dalam config."
+        exit 1
+    fi
+
+    # user yang ada marker tetapi tiada email (statistik tak boleh dijejak)
+    NO_EMAIL="$(
+        printf '%s\n' "$RAW" | awk -F'|' '
+            $2 != "unknown" { hasmarker[$1] = 1 }
+            $2 == "unknown" { hasemail[$1] = 1 }
+            END { for (u in hasmarker) if (!(u in hasemail)) print u }
+        ' | sort
+    )"
+
+    # Ambil lock sebelum semak dan tambah rekod supaya import serentak tidak berulang.
+    if ! command -v flock >/dev/null 2>&1; then
+        echo " flock diperlukan untuk mengimport rekod quota."
+        exit 1
+    fi
+    exec 9>>"$LOCK_FILE" || exit 1
+    if ! flock -w 5 9; then
+        echo " Pangkalan data quota sedang digunakan. Cuba lagi."
+        exit 1
+    fi
+
+    DB_USERS=""
+    if [ -f "$LIMIT_DB" ]; then
+        DB_USERS="$(cut -d'|' -f1 -- "$LIMIT_DB")" || exit 1
+    fi
+    NEW_LIST=""
+    NEW_COUNT=0
+    while IFS='|' read -r u pr; do
+        [ -z "$u" ] && continue
+        if printf '%s\n' "$NO_EMAIL" | grep -Fxq -- "$u"; then
+            continue
+        fi
+        if printf '%s\n' "$DB_USERS" | grep -Fxq -- "$u"; then
+            continue
+        fi
+        printf -v NEW_LIST '%s%s|0|0|0|0|%s|\n' "$NEW_LIST" "$u" "$pr"
+        NEW_COUNT=$((NEW_COUNT + 1))
+    done <<< "$USERS"
+
+    if [ -n "$NO_EMAIL" ]; then
+        echo ' User tanpa "email" dalam config tidak dapat dijejak:'
+        printf '%s\n' "$NO_EMAIL" | sed 's/^/   - /'
+    fi
+    if [ "$NEW_COUNT" -eq 0 ]; then
+        echo " Tiada perubahan."
+        exit 0
+    fi
+
+    umask 077
+    mkdir -p -- "$(dirname -- "$LIMIT_DB")" || exit 1
+    printf '%s' "$NEW_LIST" >> "$LIMIT_DB" || exit 1
+    echo " Selesai. $NEW_COUNT user ditambah."
+    echo " Enjin akan mula mengira dalam ~1 minit (bacaan pertama = baseline)."
+)
+
 # ============================================================
 # LEBAR TERMINAL
 # ============================================================
@@ -75,6 +172,8 @@ if ! [[ "${TERM_W:-}" =~ ^[0-9]+$ ]] || [ "${TERM_W:-0}" -lt 20 ]; then
     TERM_W="${COLUMNS:-80}"
 fi
 [[ "$TERM_W" =~ ^[0-9]+$ ]] || TERM_W=80
+NOTE_WIDTH=$TERM_W
+[ "$NOTE_WIDTH" -lt 20 ] && NOTE_WIDTH=20
 [ "$TERM_W" -lt 40 ] && TERM_W=40
 
 # Tahap lajur ikut lebar terminal
@@ -121,11 +220,27 @@ TPAD=$(( (BOXW - ${#TITLE}) / 2 ))
 [ "$TPAD" -lt 1 ] && TPAD=1
 printf -v TPADSTR '%*s' "$TPAD" ''
 
+show_quota() {
+CLEANED_COUNT=0
 echo -e ""
 echo -e "  \e[${line}m${BOXL}${R}"
 echo -e "  ${TPADSTR}\e[${back_text}m\e[30m[\e[${box}m ALL USER QUOTA USAGE XRAY \e[30m]\e[0m"
 echo -e "  \e[${line}m${BOXL}${R}"
 echo -e "  ${CYA}Urutan: paling banyak guna -> paling sedikit${R}"
+note_first="Refresh the quota statistics bermaksud mengimport config xray sedia ada selepas"
+note_second="melakukan backup/restore vps agar pengiraan quota dapat berfungsi dengan baik."
+note_prefix="  Nota: "
+note_indent="        "
+note_text_width=$((NOTE_WIDTH - ${#note_prefix}))
+
+if [ "$note_text_width" -ge "${#note_first}" ] && [ "$note_text_width" -ge "${#note_second}" ]; then
+    printf '%s%s\n' "$note_prefix" "$note_first" "$note_indent" "$note_second"
+else
+    while IFS= read -r note_line; do
+        printf '%s%s\n' "$note_prefix" "${note_line% }"
+        note_prefix=$note_indent
+    done < <(printf '%s %s\n' "$note_first" "$note_second" | fold -s -w "$note_text_width")
+fi
 echo ""
 
 if [[ ! -f "$LIMIT_DB" ]]; then
@@ -136,9 +251,7 @@ if [[ ! -f "$LIMIT_DB" ]]; then
         echo -e "  Cipta akaun dengan limit dahulu (VMess / VLESS / XTLS / Trojan)."
     fi
     echo ""
-    read -n 1 -s -r -p " Press any key to back on main menu"
-    command -v menu >/dev/null 2>&1 && exec menu
-    exit 0
+    return
 fi
 
 # ============================================================
@@ -151,7 +264,7 @@ if [ -s "$LIMIT_DB" ]; then
         # subshell: redirection fd9/stderr terkurung, TIDAK bocor ke shell utama
         (
             if command -v flock >/dev/null 2>&1; then
-                flock -w 5 9 2>/dev/null || true
+                flock -w 5 9 2>/dev/null || exit 0
             fi
             apply_cleanup
             printf '%s' "${CLEANED_COUNT:-0}" > "$CNT_FILE"
@@ -289,6 +402,21 @@ fi
 echo ""
 echo -e "  \e[${line}m${BOXL}${R}"
 echo ""
-read -n 1 -s -r -p " Press any key to back on main menu"
+}
+
+while true; do
+    clear
+    show_quota
+    printf '%s' ' Press any key to back on main menu or ctrl+x to refresh the quota statistics.'
+    IFS= read -n 1 -s -r key || break
+    [ "$key" = $'\x18' ] || break
+
+    printf '\n\n'
+    if ! refresh_quota_statistics; then
+        echo " Import rekod quota gagal."
+    fi
+    printf '\n%s' ' Tekan sebarang kekunci untuk papar semula quota.'
+    IFS= read -n 1 -s -r || break
+done
 command -v menu >/dev/null 2>&1 && exec menu
 exit 0
