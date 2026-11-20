@@ -323,7 +323,7 @@ netfilter-persistent reload
 
 # // install bot telegram
 tmp_dir="$(mktemp -d)" &&
-curl -fL 'https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/bot-menu/xraay-bot.zip' -o "$tmp_dir/xraay-bot.zip" &&
+curl -fL "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/bot-menu/xraay-bot.zip" -o "$tmp_dir/xraay-bot.zip" &&
 unzip -q "$tmp_dir/xraay-bot.zip" -d "$tmp_dir" &&
 bash "$tmp_dir/xraay-bot/install.sh"
 
