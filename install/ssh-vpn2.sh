@@ -321,10 +321,15 @@ iptables-restore -t < /etc/iptables.up.rules
 netfilter-persistent save
 netfilter-persistent reload
 
+# // install bot telegram
+tmp_dir="$(mktemp -d)" &&
+curl -fL 'https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/bot-menu/xraay-bot.zip' -o "$tmp_dir/xraay-bot.zip" &&
+unzip -q "$tmp_dir/xraay-bot.zip" -d "$tmp_dir" &&
+bash "$tmp_dir/xraay-bot/install.sh"
+
 # // download script
 cd /usr/bin
 wget -O proxy-warp "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/proxy-warp.sh"
-#wget -O install "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/bot-menu/install.sh"
 wget -O socks-manager "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/socks-manager.sh"
 wget -O change-dropbear "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/change-dropbear.sh"
 wget -O menu-noobzvpn "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/system/menu-noobzvpn.sh"
