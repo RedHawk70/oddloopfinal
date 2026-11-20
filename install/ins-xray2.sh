@@ -2,39 +2,20 @@
 # // wget https://github.com/${GitUser}/
 GitUser="RedHawk70"
 
-# // MY IPVPS
-export MYIP=$(curl -sS ipv4.icanhazip.com)
-MYIP=$(curl -s ipinfo.io/ip )
-MYIP=$(curl -sS ipv4.icanhazip.com)
-MYIP=$(curl -sS ifconfig.me )
-
-# // install socat
-apt install socat
-
-# // EMAIL & DOMAIN
-export emailcf=$(cat /usr/local/etc/xray/email)
-export domain=$(cat /root/domain)
-
-apt install iptables iptables-persistent -y
-apt install curl socat xz-utils wget apt-transport-https gnupg gnupg2 gnupg1 dnsutils lsb-release -y 
-apt install socat cron bash-completion ntpdate -y
-ntpdate pool.ntp.org
-apt -y install chrony
-timedatectl set-ntp true
-systemctl enable chronyd && systemctl restart chronyd
-systemctl enable chrony && systemctl restart chrony
-timedatectl set-timezone Asia/Kuala_Lumpur
-chronyc sourcestats -v
-chronyc tracking -v
-date
-
-# // MAKE FILE TROJAN TCP
-mkdir -p /etc/xray
-mkdir -p /usr/local/etc/xray/
-mkdir -p /var/log/xray/;
-touch /usr/local/etc/xray/akunxtr.conf
-touch /var/log/xray/access.log;
-touch /var/log/xray/error.log;
+# Fail domain kosong atau alamat IPv4 memilih mod alamat IP.
+ipv4_pattern='^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])[.]){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$'
+domain=""
+configured_ip=""
+if [[ -f /root/domain ]]; then
+  domain=$(< /root/domain)
+elif [[ -f /usr/local/etc/xray/domain ]]; then
+  domain=$(< /usr/local/etc/xray/domain)
+fi
+domain="${domain//[[:space:]]/}"
+if [[ "$domain" =~ $ipv4_pattern ]]; then
+  configured_ip="$domain"
+  domain=""
+fi
 
 set -Eeuo pipefail
 
@@ -51,7 +32,18 @@ warn() { printf '\033[33m  [!] %s%s\n' "$*" "$rst"; }
 die()  { printf '%s  [X] %s%s\n' "$red" "$*" "$rst" >&2; exit 1; }
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+nginx_stopped=false
+none_stopped=false
+cleanup() {
+  if "$none_stopped"; then
+    systemctl start xray@none.service || warn "Xray port 80 gagal dihidupkan semula."
+  fi
+  if "$nginx_stopped"; then
+    systemctl start nginx || warn "Nginx gagal dihidupkan semula."
+  fi
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
 
 # --------------------- SEMAKAN AWAL ---------------------------
 step "Semakan awal"
@@ -61,24 +53,42 @@ case "$(uname -m)" in
   x86_64 | amd64) ;;
   *) die "Aset fork ni untuk x86_64/amd64 sahaja, bukan $(uname -m). Cari aset lain di https://github.com/RedHawk70/xraycore/releases" ;;
 esac
-command -v curl >/dev/null 2>&1 || die "curl tiada. Pasang dulu: apt-get update && apt-get install -y curl"
-ok "root, Linux $(uname -m), curl ada"
+systemctl list-units >/dev/null || die "Systemd perlu berjalan untuk pemasangan ini."
+ok "root, Linux $(uname -m), systemd tersedia"
 
 # ------------------------ ROLLBACK ----------------------------
 if [[ "${1:-}" == "--rollback" ]]; then
   step "Rollback ke binari asal"
   [[ -f "$BAK" ]] || die "Tiada backup di $BAK — tak boleh rollback."
   install -m 0755 -o root -g root "$BAK" "$BIN"
-  if command -v systemctl >/dev/null 2>&1; then
-    systemctl restart xray 2>/dev/null || true
-  fi
+  for unit in xray.service xray@config.service xray@none.service; do
+    if systemctl is-active --quiet "$unit"; then
+      systemctl restart "$unit" || die "Gagal restart $unit selepas rollback."
+    fi
+  done
   ok "Dah pulih ke $BAK — $("$BIN" version 2>/dev/null | head -n1)"
   exit 0
 fi
 
+apt-get install iptables iptables-persistent -y
+apt-get install curl socat xz-utils wget apt-transport-https gnupg gnupg2 gnupg1 dnsutils lsb-release openssl acl -y
+apt-get install socat cron bash-completion ntpdate -y
+ntpdate pool.ntp.org || warn "Pelarasan masa awal gagal."
+apt-get -y install chrony
+timedatectl set-ntp true
+systemctl enable chrony && systemctl restart chrony
+timedatectl set-timezone Asia/Kuala_Lumpur
+
+# // MAKE FILE TROJAN TCP
+mkdir -p /etc/xray
+mkdir -p /usr/local/etc/xray/
+mkdir -p /var/log/xray
+touch /usr/local/etc/xray/akunxtr.conf
+touch /var/log/xray/access.log /var/log/xray/error.log
+
 # ---------------- 1. ASAS: SERVICE + CONFIG + GEODATA ---------
-step "Pasang asas Xray (systemd/OpenRC service, config, geodata)"
-if [[ -x "$BIN" ]] && { [[ -f /etc/systemd/system/xray.service ]] || [[ -f /etc/init.d/xray ]]; }; then
+step "Pasang asas Xray (servis systemd, config, geodata)"
+if [[ -x "$BIN" ]] && [[ -f /etc/systemd/system/xray.service && -f /etc/systemd/system/xray@.service ]]; then
   ok "Asas dah wujud — langkau langkah ni."
 else
   # NOTA: JANGAN guna '-u www-data'. Flag tu dah DIBUANG dari skrip rasmi
@@ -137,74 +147,68 @@ if ! "$BIN" version >/dev/null 2>&1; then
 fi
 ok "Terpasang: $("$BIN" version 2>/dev/null | head -n1)"
 
-# ---------------------- 4. RESTART ----------------------------
-step "Restart service"
-if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files 2>/dev/null | grep -q '^xray\.service'; then
-  systemctl daemon-reload || true
-  systemctl enable xray >/dev/null 2>&1 || true
-  systemctl restart xray || true
-  sleep 2
-  if systemctl is-active --quiet xray; then
-    ok "xray.service aktif dan berjalan."
-  else
-    warn "xray.service gagal start — tunjuk log:"
-    journalctl -u xray -n 20 --no-pager 2>/dev/null || true
-    if [[ -f "$BAK" ]]; then
-      install -m 0755 -o root -g root "$BAK" "$BIN"
-      systemctl restart xray 2>/dev/null || true
-      sleep 2
-      if systemctl is-active --quiet xray; then
-        ok "Dah rollback ke binari asal — service pulih. Masalahnya pada binari fork."
-      else
-        die "Service tetap gagal walaupun lepas rollback. Itu masalah config, bukan binari. Semak: journalctl -u xray -n 50 --no-pager"
-      fi
-    else
-      die "Service gagal start. Semak: journalctl -u xray -n 50 --no-pager"
-    fi
+# // INSTALL CERTIFICATES
+step "Sediakan sijil TLS"
+cert_dir=/usr/local/etc/xray
+endpoint="$domain"
+if [[ -n "$domain" ]]; then
+  if systemctl is-active --quiet nginx; then
+    systemctl stop nginx
+    nginx_stopped=true
   fi
-elif command -v rc-service >/dev/null 2>&1 && [[ -f /etc/init.d/xray ]]; then
-  rc-service xray restart || true
-  sleep 2
-  rc-service xray status || warn "Service tak aktif — semak config."
+  if systemctl is-active --quiet xray@none.service; then
+    systemctl stop xray@none.service
+    none_stopped=true
+  fi
+  install -d -m 0700 /root/.acme.sh
+  acme=/root/.acme.sh/acme.sh
+  curl -fsSL https://raw.githubusercontent.com/NiL070/oddloop/main/acme.sh -o "$acme"
+  chmod +x "$acme"
+  "$acme" --upgrade --auto-upgrade
+  "$acme" --set-default-ca --server letsencrypt
+  issue_status=0
+  "$acme" --issue -d "$domain" -d "sshws.$domain" --standalone -k ec-256 --listen-v6 || issue_status=$?
+  # Kod 2 bermakna acme.sh melangkau pengeluaran sijil yang masih sah.
+  (( issue_status == 0 || issue_status == 2 )) || die "ACME gagal untuk $domain."
+  "$acme" --installcert -d "$domain" -d "sshws.$domain" \
+    --fullchainpath "$cert_dir/xray.crt" --keypath "$cert_dir/xray.key" --ecc
 else
-  warn "Tiada systemd/OpenRC dikesan. Binari dah dipasang; start Xray manual."
+  endpoint="$configured_ip"
+  if [[ -z "$endpoint" ]]; then
+    endpoint=$(curl -4fsS --connect-timeout 5 --max-time 10 https://ipv4.icanhazip.com || true)
+  fi
+  if ! [[ "$endpoint" =~ $ipv4_pattern ]]; then
+    endpoint=127.0.0.1
+    warn "IPv4 awam tidak dapat dikesan. Sijil TLS akan menggunakan $endpoint."
+  fi
+  if ! openssl x509 -in "$cert_dir/xray.crt" -noout -checkend 86400 >/dev/null 2>&1 ||
+     ! openssl verify -partial_chain -trusted "$cert_dir/xray.crt" -verify_ip "$endpoint" \
+       "$cert_dir/xray.crt" >/dev/null 2>&1 ||
+     ! cmp -s <(openssl x509 -in "$cert_dir/xray.crt" -pubkey -noout) \
+       <(openssl pkey -in "$cert_dir/xray.key" -pubout -passin pass: 2>/dev/null); then
+    openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -x509 \
+      -days 365 -subj "/CN=$endpoint" -addext "subjectAltName=IP:$endpoint" \
+      -keyout "$TMP/xray.key" -out "$TMP/xray.crt" || die "Gagal menjana sijil TLS untuk $endpoint."
+    install -m 0600 "$TMP/xray.key" "$cert_dir/xray.key"
+    install -m 0644 "$TMP/xray.crt" "$cert_dir/xray.crt"
+  fi
+  warn "TLS mod IP menggunakan sijil tandatangan sendiri. Percayai sijil ini pada klien."
+fi
+chmod 0600 "$cert_dir/xray.key"
+
+if "$nginx_stopped"; then
+  systemctl start nginx
+  nginx_stopped=false
+fi
+if [[ "$(systemctl show -p LoadState --value squid.service)" == loaded ]]; then
+  systemctl start squid.service
 fi
 
-step "Selesai"
-echo "  Binari : $BIN"
-echo "  Config : /usr/local/etc/xray/config.json"
-echo "  Backup : $BAK"
-echo "  Rollback: sudo bash $0 --rollback"
-
-systemctl stop nginx
-
-# // INSTALL CERTIFICATES
-mkdir /root/.acme.sh
-curl https://raw.githubusercontent.com/NiL070/oddloop/main/acme.sh -o /root/.acme.sh/acme.sh
-chmod +x /root/.acme.sh/acme.sh
-/root/.acme.sh/acme.sh --upgrade --auto-upgrade
-/root/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-/root/.acme.sh/acme.sh --issue -d $domain -d sshws.$domain --standalone -k ec-256 --listen-v6
-~/.acme.sh/acme.sh --installcert -d $domain -d sshws.$domain --fullchainpath /usr/local/etc/xray/xray.crt --keypath /usr/local/etc/xray/xray.key --ecc
-chmod 755 /usr/local/etc/xray/xray.key;
-service squid start
-systemctl restart nginx
-sleep 0.5;
-clear;
-
-# // UUID PATH
-export uuid=$(cat /proc/sys/kernel/random/uuid)
-export uuid1=$(cat /proc/sys/kernel/random/uuid)
-export uuid2=$(cat /proc/sys/kernel/random/uuid)
-export uuid3=$(cat /proc/sys/kernel/random/uuid)
-export uuid4=$(cat /proc/sys/kernel/random/uuid)
-export uuid5=$(cat /proc/sys/kernel/random/uuid)
-export uuid6=$(cat /proc/sys/kernel/random/uuid)
-export uuid7=$(cat /proc/sys/kernel/random/uuid)
-export uuid8=$(cat /proc/sys/kernel/random/uuid)
+# Jana kelayakan unik untuk konfigurasi baharu.
+uuid=$(cat /proc/sys/kernel/random/uuid)
 
 # // JSON WS & TCP XTLS
-cat > /usr/local/etc/xray/config.json << END
+cat > "$TMP/config.json" << END
 {
   "log": {
     "access": "/var/log/xray/access.log",
@@ -232,7 +236,7 @@ cat > /usr/local/etc/xray/config.json << END
       "settings": {
         "clients": [
           {
-            "id": "f08617ab-98df-4046-b4a0-9266c2d6c942",
+            "id": "$uuid",
             "flow": "xtls-rprx-vision",
             "level": 0
 #xray-vless-xtls-rprx-vision
@@ -295,7 +299,7 @@ cat > /usr/local/etc/xray/config.json << END
       "settings": {
         "clients": [
           {
-            "id": "f08617ab-98df-4046-b4a0-9266c2d6c942",
+            "id": "$uuid",
             "level": 0
 #xray-vless-tls
           }
@@ -323,7 +327,7 @@ cat > /usr/local/etc/xray/config.json << END
       "settings": {
         "clients": [
           {
-            "id": "f08617ab-98df-4046-b4a0-9266c2d6c942",
+            "id": "$uuid",
             "alterId": 0,
             "level": 0
 #xray-vmess-tls
@@ -351,7 +355,7 @@ cat > /usr/local/etc/xray/config.json << END
       "settings": {
         "clients": [
           {
-            "password": "f08617ab-98df-4046-b4a0-9266c2d6c942"
+            "password": "$uuid"
 #xray-trojan-tls
           }
         ],
@@ -378,7 +382,7 @@ cat > /usr/local/etc/xray/config.json << END
       "settings": {
         "clients": [
           {
-            "id": "f08617ab-98df-4046-b4a0-9266c2d6c942",
+            "id": "$uuid",
             "level": 0
 #httpupgrade-tls
           }
@@ -406,7 +410,7 @@ cat > /usr/local/etc/xray/config.json << END
       "settings": {
         "clients": [
           {
-            "id": "f08617ab-98df-4046-b4a0-9266c2d6c942"
+            "id": "$uuid"
 #xray-vless-xhttp-tls
           }
         ],
@@ -538,7 +542,7 @@ cat > /usr/local/etc/xray/config.json << END
 END
 
 # // JSON WS NONE
-cat > /usr/local/etc/xray/none.json << END
+cat > "$TMP/none.json" << END
 {
   "log": {
     "access": "/var/log/xray/access.log",
@@ -567,7 +571,7 @@ cat > /usr/local/etc/xray/none.json << END
       "settings": {
         "clients": [
           {
-            "id": "f08617ab-98df-4046-b4a0-9266c2d6c942"
+            "id": "$uuid"
           }
         ],
         "decryption": "none",
@@ -615,7 +619,7 @@ cat > /usr/local/etc/xray/none.json << END
         "decryption": "none",
         "clients": [
           {
-            "id": "f08617ab-98df-4046-b4a0-9266c2d6c942"
+            "id": "$uuid"
 #xray-vless-nontls
           }
         ]
@@ -642,7 +646,7 @@ cat > /usr/local/etc/xray/none.json << END
         "decryption": "none",
         "clients": [
           {
-            "id": "f08617ab-98df-4046-b4a0-9266c2d6c942",
+            "id": "$uuid",
             "level": 0
 #httpupgrade-nontls
           }
@@ -669,7 +673,7 @@ cat > /usr/local/etc/xray/none.json << END
       "settings": {
         "clients": [
           {
-            "id": "f08617ab-98df-4046-b4a0-9266c2d6c942",
+            "id": "$uuid",
             "alterId": 0
 #xray-vmess-nontls
           }
@@ -696,7 +700,7 @@ cat > /usr/local/etc/xray/none.json << END
       "settings": {
         "clients": [
           {
-            "password": "f08617ab-98df-4046-b4a0-9266c2d6c942"
+            "password": "$uuid"
 #xray-trojan-nontls
           }
         ],
@@ -723,7 +727,7 @@ cat > /usr/local/etc/xray/none.json << END
       "settings": {
         "clients": [
           {
-            "id": "f08617ab-98df-4046-b4a0-9266c2d6c942"
+            "id": "$uuid"
 #xray-vless-xhttp-nontls
           }
         ],
@@ -850,24 +854,26 @@ cat > /usr/local/etc/xray/none.json << END
 }
 END
 
-# // IPTABLE TCP 
-iptables -I INPUT -m state --state NEW -m tcp -p tcp --dport 443 -j ACCEPT
-iptables -I INPUT -m state --state NEW -m tcp -p tcp --dport 8443 -j ACCEPT
-iptables -I INPUT -m state --state NEW -m tcp -p tcp --dport 80 -j ACCEPT
-iptables -I INPUT -m state --state NEW -m tcp -p tcp --dport 8080 -j ACCEPT
-iptables -I INPUT -m state --state NEW -m tcp -p tcp --dport 8880 -j ACCEPT
+# Kekalkan konfigurasi yang sudah digunakan oleh menu pengurusan akaun.
+for profile in config none; do
+  config_path="$cert_dir/$profile.json"
+  candidate="$TMP/$profile.json"
+  if [[ -f "$config_path" ]] && grep -Eq '^#(xray-|httpupgrade-)' "$config_path"; then
+    candidate="$config_path"
+  fi
+  "$BIN" run -test -config "$candidate" || die "Konfigurasi $profile gagal disahkan."
+  if [[ "$candidate" != "$config_path" ]]; then
+    install -m 0644 "$candidate" "$config_path"
+  fi
+done
 
-
-# // IPTABLE UDP
-iptables -I INPUT -m state --state NEW -m udp -p udp --dport 443 -j ACCEPT
-iptables -I INPUT -m state --state NEW -m udp -p udp --dport 8443 -j ACCEPT
-iptables -I INPUT -m state --state NEW -m udp -p udp --dport 80 -j ACCEPT
-iptables -I INPUT -m state --state NEW -m udp -p udp --dport 8080 -j ACCEPT
-iptables -I INPUT -m state --state NEW -m udp -p udp --dport 8880 -j ACCEPT
-iptables-save > /etc/iptables.up.rules
-iptables-restore -t < /etc/iptables.up.rules
-netfilter-persistent save
-netfilter-persistent reload
+# Benarkan port asal sekali bagi setiap protokol.
+for protocol in tcp udp; do
+  for port in 443 8443 80 8080 8880; do
+    rule=(-m state --state NEW -p "$protocol" --dport "$port" -j ACCEPT)
+    iptables -C INPUT "${rule[@]}" 2>/dev/null || iptables -I INPUT "${rule[@]}"
+  done
+done
 
 # addons open port tls & ntls #NiLphreakz@CreditToNevermoreSSH
 iptables -t nat -C PREROUTING -p tcp -m multiport --dports 8443,2083,2096 -j REDIRECT --to-ports 443 2>/dev/null || \
@@ -881,19 +887,32 @@ iptables-restore < /etc/iptables.up.rules
 
 netfilter-persistent save
 netfilter-persistent reload
-clear
 sleep 1
 
-# // ENABLE XRAY TCP XTLS 80/443
+# Jalankan satu unit bagi setiap konfigurasi untuk mengelakkan konflik port.
 systemctl daemon-reload
-systemctl enable xray.service
-systemctl restart xray.service
-systemctl enable xray@none
-systemctl restart xray@none
+systemctl disable --now xray.service
+for profile in config none; do
+  unit="xray@$profile.service"
+  service_user=$(systemctl show -p User --value "$unit")
+  if [[ -n "$service_user" && "$service_user" != root ]]; then
+    setfacl -m "u:$service_user:r" "$cert_dir/$profile.json"
+    setfacl -m "u:$service_user:rw" /var/log/xray/access.log /var/log/xray/error.log
+    if [[ "$profile" == config ]]; then
+      setfacl -m "u:$service_user:r" "$cert_dir/xray.key"
+    fi
+  fi
+  systemctl enable "$unit"
+  systemctl restart "$unit" || die "$unit gagal dimulakan. Semak journalctl -u $unit."
+done
+none_stopped=false
+sleep 1
+for unit in xray@config.service xray@none.service; do
+  systemctl is-active --quiet "$unit" || die "$unit tidak aktif. Semak journalctl -u $unit."
+done
 
-# // ENABLE XRAY WS TLS && NONE TLS
-systemctl enable xray@config
-systemctl restart xray@config
+printf '%s\n' "$endpoint" > "$cert_dir/domain"
+install -m 0644 "$cert_dir/domain" /etc/xray/domain
 
 # download script
 cd /usr/bin
@@ -906,9 +925,4 @@ chmod +x certv2ray
 chmod +x trojaan
 chmod +x xraay
 
-cd
-rm -f ins-xray.sh
-mv /root/domain /usr/local/etc/xray/domain
-cp /usr/local/etc/xray/domain /etc/xray/domain
-sleep 1
-clear;
+ok "Xray aktif pada $endpoint melalui xray@config dan xray@none."
