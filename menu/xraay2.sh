@@ -1872,14 +1872,19 @@ config_list () {
 	found=0
 	while IFS=$'\t' read -r cname mode proto addr cpath extra host; do
 		[[ -z "$cname" ]] && continue
-		# Sokong format lama tanpa medan mode: anggap vless
-		if [[ "$mode" != "vmess" && "$mode" != "vless" && "$mode" != "xtls" ]]; then
-			extra="$cpath"; cpath="$addr"; addr="$proto"; proto="$mode"; mode="vless"
-		fi
-		# Hanya papar config untuk mode semasa (vmess/vless)
+		case "$mode" in
+			vmess|vless|xtls|trojan) ;;
+			[1-6])
+				# Format lama simpan nombor protokol dalam kolum kedua.
+				extra="$cpath"; cpath="$addr"; addr="$proto"; proto="$mode"; mode="vless"
+				;;
+			*) continue ;;
+		esac
+		# Hanya papar config untuk mode semasa.
 		[[ "$mode" != "$curmode" ]] && continue
 		# Bina semula link ikut user semasa (uuid/user/exp/port sesi ini)
 		link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra" "${host:-}")"
+		[[ -n "$link" ]] || continue
 		echo "═════════════════════════════════"
 		echo "Link ${cname}  : ${link}"
 		found=1
