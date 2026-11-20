@@ -1753,7 +1753,9 @@ config_default_path () {
 }
 
 config_build_link () {
-	local mode="$1" proto="$2" addr="$3" path="$4" extra="$5"
+	local mode="$1" proto="$2" addr="$3" path="$4" extra="$5" host="${6:-}"
+	local host_query=""
+	[[ -n "$host" ]] && host_query="&host=${host}"
 	if [[ "$mode" == "xtls" ]]; then
 		echo "vless://${uuid}@${addr}:${xtls}?security=tls&encryption=none&headerType=none&type=tcp&flow=xtls-rprx-vision&sni=${extra}#${user}_${exp}"
 		return
@@ -1761,7 +1763,7 @@ config_build_link () {
 	if [[ "$mode" == "vmess" ]]; then
 		local json
 		case "$proto" in
-			1) json=$(printf '{"v":"2","ps":"%s_%s","add":"%s","port":"%s","id":"%s","aid":"0","net":"ws","path":"%s","type":"none","host":"%s","tls":"tls","sni":"%s"}' "$user" "$exp" "$addr" "$tls" "$uuid" "$path" "$extra" "$extra")
+			1) json=$(printf '{"v":"2","ps":"%s_%s","add":"%s","port":"%s","id":"%s","aid":"0","net":"ws","path":"%s","type":"none","host":"%s","tls":"tls","sni":"%s"}' "$user" "$exp" "$addr" "$tls" "$uuid" "$path" "${host:-$extra}" "$extra")
 			   echo "vmess://$(printf '%s' "$json" | base64 -w 0)";;
 			2) json=$(printf '{"v":"2","ps":"%s_%s","add":"%s","port":"%s","id":"%s","aid":"0","net":"ws","path":"%s","type":"none","host":"%s","tls":"none"}' "$user" "$exp" "$addr" "$none" "$uuid" "$path" "$extra")
 			   echo "vmess://$(printf '%s' "$json" | base64 -w 0)";;
@@ -1769,18 +1771,18 @@ config_build_link () {
 		return
 	fi
 	case "$proto" in
-		1) echo "vless://${uuid}@${addr}:${tls}?path=${path}&security=tls&encryption=none&type=ws&sni=${extra}#${user}_${exp}";;
+		1) echo "vless://${uuid}@${addr}:${tls}?path=${path}&security=tls&encryption=none&type=ws&sni=${extra}${host_query}#${user}_${exp}";;
 		2) echo "vless://${uuid}@${addr}:${none}?path=${path}&encryption=none&host=${extra}&type=ws#${user}_${exp}";;
-		3) echo "vless://${uuid}@${addr}:${upgradetls}?path=${path}&security=tls&encryption=none&type=httpupgrade&sni=${extra}#${user}_${exp}";;
+		3) echo "vless://${uuid}@${addr}:${upgradetls}?path=${path}&security=tls&encryption=none&type=httpupgrade&sni=${extra}${host_query}#${user}_${exp}";;
 		4) echo "vless://${uuid}@${addr}:${upgradenone}?path=${path}&encryption=none&host=${extra}&type=httpupgrade#${user}_${exp}";;
-		5) echo "vless://${uuid}@${addr}:${xhttptls}?path=${path}&security=tls&encryption=none&type=xhttp&sni=${extra}#${user}_${exp}";;
+		5) echo "vless://${uuid}@${addr}:${xhttptls}?path=${path}&security=tls&encryption=none&type=xhttp&sni=${extra}${host_query}#${user}_${exp}";;
 		6) echo "vless://${uuid}@${addr}:${xhttpnone}?path=${path}&encryption=none&host=${extra}&type=xhttp#${user}_${exp}";;
 	esac
 }
 
 config_edit () {
 	local pfile="$1"
-	local cname proto addr cpath dpath extra link mode
+	local cname proto addr cpath dpath extra host link mode
 	mode="${CFGMODE:-vless}"
 	echo ""
 	read -rp "   Nama config: " cname
@@ -1815,6 +1817,8 @@ config_edit () {
 	if [[ "$mode" == "xtls" ]]; then
 		cpath="-"
 	else
+		read -rp "   Host (Enter untuk ${domain}): " host
+		host="${host:-$domain}"
 		if [[ "$mode" == "vmess" ]]; then
 			dpath="/vmess"
 		else
@@ -1827,13 +1831,17 @@ config_edit () {
 		read -rp "   SNI (Enter untuk ${domain}): " extra
 		[[ -z "$extra" ]] && extra="${domain}"
 	else
-		read -rp "   Host (Enter untuk ${domain}): " extra
-		[[ -z "$extra" ]] && extra="${domain}"
+		extra="$host"
+		host=""
 	fi
-	link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra")"
+	link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra" "${host:-}")"
 	mkdir -p "$CONFIGLIST_DIR"
 	# Simpan sebagai template (tanpa uuid/user/exp) supaya boleh guna semula untuk semua user
-	printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$cname" "$mode" "$proto" "$addr" "$cpath" "$extra" >> "$pfile"
+	local -a fields=("$cname" "$mode" "$proto" "$addr" "$cpath" "$extra")
+	# Host TLS di kolum ketujuh. Kolum lama kekal untuk config sedia ada.
+	[[ -n "${host:-}" ]] && fields+=("$host")
+	local IFS=$'\t'
+	printf '%s\n' "${fields[*]}" >> "$pfile"
 	echo ""
 	echo "   Config disimpan:"
 	echo "   ══════════════════════════════════"
@@ -1845,7 +1853,7 @@ config_edit () {
 
 config_list () {
 	local pfile="$1"
-	local cname mode proto addr cpath extra link found curmode
+	local cname mode proto addr cpath extra host link found curmode
 	clear
 	echo ""
 	if [[ -z "$uuid" ]]; then
@@ -1862,7 +1870,7 @@ config_list () {
 	fi
 	curmode="${CFGMODE:-vless}"
 	found=0
-	while IFS=$'\t' read -r cname mode proto addr cpath extra; do
+	while IFS=$'\t' read -r cname mode proto addr cpath extra host; do
 		[[ -z "$cname" ]] && continue
 		# Sokong format lama tanpa medan mode: anggap vless
 		if [[ "$mode" != "vmess" && "$mode" != "vless" && "$mode" != "xtls" ]]; then
@@ -1871,7 +1879,7 @@ config_list () {
 		# Hanya papar config untuk mode semasa (vmess/vless)
 		[[ "$mode" != "$curmode" ]] && continue
 		# Bina semula link ikut user semasa (uuid/user/exp/port sesi ini)
-		link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra")"
+		link="$(config_build_link "$mode" "$proto" "$addr" "$cpath" "$extra" "${host:-}")"
 		echo "═════════════════════════════════"
 		echo "Link ${cname}  : ${link}"
 		found=1
