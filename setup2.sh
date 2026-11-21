@@ -1,5 +1,11 @@
 #!/bin/bash
 GitUser="RedHawk70"
+setup_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd) || exit 1
+xray_installer="$setup_dir/ins-xray2.sh"
+if [[ ! -r "$xray_installer" ]]; then
+  printf 'Letakkan ins-xray2.sh yang telah dikemas kini dalam folder yang sama dengan setup2.sh.\n' >&2
+  exit 1
+fi
 
 # ================== COLOR ==================
 Lred='\e[1;91m'
@@ -302,27 +308,32 @@ echo -e "   .----------------------------------."
 echo -e "   |\e[1;32mPlease select a domain type below \e[0m|"
 echo -e "   '----------------------------------'"
 echo -e "     \e[1;32m1)\e[0m Enter your Subdomain"
-echo -e "     \e[1;32m2)\e[0m Use a random Subdomain"
+echo -e "     \e[1;32m2)\e[0m Use a random Subdomain (IP fallback)"
+echo -e "     \e[1;32m3)\e[0m Continue without a domain"
 echo -e "   ------------------------------------"
-read -p "   Please select numbers 1-2 or Any Button(Random) : " host
-echo ""
-if [[ $host == "1" ]]; then
-echo -e "   \e[1;32mPlease enter your subdomain "
-read -p "   Subdomain: " host1
-echo "IP=" >> /var/lib/premium-script/ipvps.conf
-echo $host1 > /root/domain
-echo ""
-elif [[ $host == "2" ]]; then
-#install cf
-wget https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/install/cf.sh && chmod +x cf.sh && ./cf.sh
-rm -f /root/cf.sh
-clear
-else
-echo -e "Random Subdomain/Domain is used"
-wget https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/install/cf.sh && chmod +x cf.sh && ./cf.sh
-rm -f /root/cf.sh
-clear
-fi
+read -r -p "   Select 1-3 (ENTER for no domain): " host || exit 1
+xray_options=()
+# Cegah pilihan baharu daripada menggunakan domain lama.
+: > /root/domain || exit 1
+case "$host" in
+  1)
+    read -r -p "   Subdomain (ENTER for no domain): " host1 || exit 1
+    echo "IP=" >> /var/lib/premium-script/ipvps.conf
+    printf '%s\n' "$host1" > /root/domain || exit 1
+    ;;
+  2)
+    xray_options+=(--allow-ip-fallback)
+    cf_script=$(mktemp) || exit 1
+    if ! wget -O "$cf_script" "https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/install/cf.sh" ||
+       ! bash "$cf_script"; then
+      printf 'Subdomain rawak gagal disediakan. Pemasangan diteruskan dalam mod IP.\n' >&2
+      : > /root/domain || exit 1
+    fi
+    rm -f -- "$cf_script"
+    ;;
+  3|"") ;;
+  *) printf 'Pilihan tidak sah. Pemasangan diteruskan dalam mod IP.\n' >&2 ;;
+esac
 echo ""
 clear
 echo -e "\e[0;32mREADY FOR INSTALLATION SCRIPT...\e[0m"
@@ -336,7 +347,10 @@ clear
 #install Xray
 echo -e "\e[0;32mINSTALLING XRAY CORE...\e[0m"
 sleep 1
-wget https://raw.githubusercontent.com/${GitUser}/oddloopfinal/main/install/ins-xray2.sh && chmod +x ins-xray2.sh && screen -S ins-xray ./ins-xray2.sh
+if ! bash "$xray_installer" "${xray_options[@]}"; then
+  printf 'Pemasangan Xray gagal. Semak ralat Xray di atas.\n' >&2
+  exit 1
+fi
 echo -e "\e[0;32mDONE INSTALLING XRAY CORE\e[0m"
 clear
 #install ohp-server
