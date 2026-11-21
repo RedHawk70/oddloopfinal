@@ -162,29 +162,42 @@ ok "Terpasang: $("$BIN" version 2>/dev/null | head -n1)"
 
 # // INSTALL CERTIFICATES
 step "Sediakan sijil TLS"
-endpoint="$domain"
-if [[ -n "$domain" ]]; then
+issue_domain_certificate() {
   if systemctl is-active --quiet nginx; then
-    systemctl stop nginx
+    systemctl stop nginx || return 1
     nginx_stopped=true
   fi
   if systemctl is-active --quiet xray@none.service; then
-    systemctl stop xray@none.service
+    systemctl stop xray@none.service || return 1
     none_stopped=true
   fi
-  install -d -m 0700 /root/.acme.sh
+  install -d -m 0700 /root/.acme.sh || return 1
   acme=/root/.acme.sh/acme.sh
-  curl -fsSL https://raw.githubusercontent.com/NiL070/oddloop/main/acme.sh -o "$acme"
-  chmod +x "$acme"
-  "$acme" --upgrade --auto-upgrade
-  "$acme" --set-default-ca --server letsencrypt
+  curl -fsSL https://raw.githubusercontent.com/NiL070/oddloop/main/acme.sh -o "$acme" || return 1
+  chmod +x "$acme" || return 1
+  "$acme" --upgrade --auto-upgrade || return 1
+  "$acme" --set-default-ca --server letsencrypt || return 1
   issue_status=0
   "$acme" --issue -d "$domain" -d "sshws.$domain" --standalone -k ec-256 --listen-v6 || issue_status=$?
   # Kod 2 bermakna acme.sh melangkau pengeluaran sijil yang masih sah.
-  (( issue_status == 0 || issue_status == 2 )) || die "ACME gagal untuk $domain."
+  (( issue_status == 0 || issue_status == 2 )) || return 1
   "$acme" --installcert -d "$domain" -d "sshws.$domain" \
-    --fullchainpath "$cert_dir/xray.crt" --keypath "$cert_dir/xray.key" --ecc
-else
+    --fullchainpath "$cert_dir/xray.crt" --keypath "$cert_dir/xray.key" --ecc || return 1
+  [[ -s "$cert_dir/xray.crt" && -s "$cert_dir/xray.key" ]]
+}
+
+if [[ -n "$domain" ]] && ! issue_domain_certificate; then
+  if [[ "${1:-}" == "--allow-ip-fallback" ]]; then
+    warn "Sijil untuk $domain gagal diperoleh. Pemasangan diteruskan dalam mod IP."
+    domain=""
+    # Elakkan percubaan ACME semula terhadap subdomain rawak yang gagal.
+    : > /root/domain
+  else
+    die "ACME gagal untuk $domain."
+  fi
+fi
+endpoint="$domain"
+if [[ -z "$domain" ]]; then
   endpoint="$configured_ip"
   if [[ -z "$endpoint" ]]; then
     endpoint=$(curl -4fsS --connect-timeout 5 --max-time 10 https://ipv4.icanhazip.com || true)
