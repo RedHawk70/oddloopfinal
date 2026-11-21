@@ -324,14 +324,15 @@ BEGIN {
     tused += used
 
     # ----- Used -----
-    if (used >= 1073741824)   uh = sprintf("%.2f GB", used/1073741824)
+    if (used >= 1099511627776) uh = sprintf("%g TB", used/1099511627776)
+    else if (used >= 1073741824) uh = sprintf("%.2f GB", used/1073741824)
     else if (used >= 1048576) uh = sprintf("%.2f MB", used/1048576)
     else if (used > 0)        uh = sprintf("%.0f KB", used/1024)
     else                      uh = "0 KB"
 
     # ----- Limit + peratus -----
     if (q > 0) {
-        qh = sprintf("%g GB", q)
+        qh = (q >= 1024) ? sprintf("%g TB", q/1024) : sprintf("%g GB", q)
         qb = q * 1073741824
         pct = used * 100 / qb
         p = (pct > 100) ? 100 : pct
@@ -385,7 +386,8 @@ END {
         if (compact) print "  User lama tiada rekod quota."
         else print "  User yang dicipta sebelum feature limit tiada rekod quota."
     } else {
-        if (tused >= 1073741824)   th = sprintf("%.2f GB", tused/1073741824)
+        if (tused >= 1099511627776) th = sprintf("%g TB", tused/1099511627776)
+        else if (tused >= 1073741824) th = sprintf("%.2f GB", tused/1073741824)
         else if (tused >= 1048576) th = sprintf("%.2f MB", tused/1048576)
         else                       th = sprintf("%.0f KB", tused/1024)
         if (compact)
