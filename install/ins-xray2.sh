@@ -2,14 +2,16 @@
 # // wget https://github.com/${GitUser}/
 GitUser="RedHawk70"
 
+cert_dir=/usr/local/etc/xray
+
 # Fail domain kosong atau alamat IPv4 memilih mod alamat IP.
 ipv4_pattern='^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])[.]){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$'
 domain=""
 configured_ip=""
 if [[ -f /root/domain ]]; then
   domain=$(< /root/domain)
-elif [[ -f /usr/local/etc/xray/domain ]]; then
-  domain=$(< /usr/local/etc/xray/domain)
+elif [[ -f "$cert_dir/domain" ]]; then
+  domain=$(< "$cert_dir/domain")
 fi
 domain="${domain//[[:space:]]/}"
 if [[ "$domain" =~ $ipv4_pattern ]]; then
@@ -56,6 +58,19 @@ esac
 systemctl list-units >/dev/null || die "Systemd perlu berjalan untuk pemasangan ini."
 ok "root, Linux $(uname -m), systemd tersedia"
 
+# Simpan nama domain sahaja supaya menu tidak memaparkan IP sebagai domain.
+save_domain_metadata() {
+  mkdir -p "$cert_dir" /etc/xray
+  printf '%s\n' "$domain" > "$cert_dir/domain"
+  install -m 0644 "$cert_dir/domain" /etc/xray/domain
+}
+
+if [[ "${1:-}" == "--refresh-domain-metadata" ]]; then
+  save_domain_metadata
+  ok "Maklumat domain dikemas kini."
+  exit 0
+fi
+
 # ------------------------ ROLLBACK ----------------------------
 if [[ "${1:-}" == "--rollback" ]]; then
   step "Rollback ke binari asal"
@@ -72,11 +87,9 @@ fi
 
 apt-get install iptables iptables-persistent -y
 apt-get install curl socat xz-utils wget apt-transport-https gnupg gnupg2 gnupg1 dnsutils lsb-release openssl acl -y
-apt-get install socat cron bash-completion ntpdate -y
-ntpdate pool.ntp.org || warn "Pelarasan masa awal gagal."
-apt-get -y install chrony
-timedatectl set-ntp true
-systemctl enable chrony && systemctl restart chrony
+# Gunakan chrony untuk penyelarasan masa, termasuk pada Debian 13.
+apt-get install -y cron bash-completion chrony
+systemctl enable --now chrony.service
 timedatectl set-timezone Asia/Kuala_Lumpur
 
 # // MAKE FILE TROJAN TCP
@@ -149,7 +162,6 @@ ok "Terpasang: $("$BIN" version 2>/dev/null | head -n1)"
 
 # // INSTALL CERTIFICATES
 step "Sediakan sijil TLS"
-cert_dir=/usr/local/etc/xray
 endpoint="$domain"
 if [[ -n "$domain" ]]; then
   if systemctl is-active --quiet nginx; then
@@ -911,8 +923,7 @@ for unit in xray@config.service xray@none.service; do
   systemctl is-active --quiet "$unit" || die "$unit tidak aktif. Semak journalctl -u $unit."
 done
 
-printf '%s\n' "$endpoint" > "$cert_dir/domain"
-install -m 0644 "$cert_dir/domain" /etc/xray/domain
+save_domain_metadata
 
 # download script
 cd /usr/bin
